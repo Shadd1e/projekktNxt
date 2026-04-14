@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, getUser, clearToken, saveUser } from "@/lib/api";
@@ -25,7 +25,7 @@ const PLANS = [
   { id: "monthly", label: "Monthly",      price: "₦15,000", desc: "Unlimited for 30 days.",    popular: false },
 ];
 
-export default function DashboardPage() {
+function DashboardInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const showPlans    = searchParams.get("showPlans") === "1";
@@ -365,5 +365,13 @@ export default function DashboardPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div style={{ color: "var(--muted)", textAlign: "center", paddingTop: 80 }}>Loading…</div>}>
+      <DashboardInner />
+    </Suspense>
   );
 }

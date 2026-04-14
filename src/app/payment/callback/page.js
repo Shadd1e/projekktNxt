@@ -1,14 +1,13 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getUser, saveUser } from "@/lib/api";
 
-export default function PaymentCallbackPage() {
+function CallbackInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const status       = searchParams.get("status");
-
   const [state, setState] = useState("loading");
 
   useEffect(() => {
@@ -60,5 +59,13 @@ export default function PaymentCallbackPage() {
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     </div>
+  );
+}
+
+export default function PaymentCallbackPage() {
+  return (
+    <Suspense fallback={<div style={{ color: "var(--muted)", textAlign: "center", paddingTop: 80 }}>Loading…</div>}>
+      <CallbackInner />
+    </Suspense>
   );
 }

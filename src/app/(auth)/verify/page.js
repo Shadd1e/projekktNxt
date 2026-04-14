@@ -1,21 +1,21 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, saveToken, saveUser } from "@/lib/api";
 
-export default function VerifyPage() {
+function VerifyInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const userId       = searchParams.get("userId");
   const email        = searchParams.get("email");
 
-  const [digits, setDigits]     = useState(["", "", "", "", "", ""]);
-  const [loading, setLoading]   = useState(false);
+  const [digits, setDigits]       = useState(["", "", "", "", "", ""]);
+  const [loading, setLoading]     = useState(false);
   const [resending, setResending] = useState(false);
-  const [error, setError]       = useState("");
-  const [success, setSuccess]   = useState("");
-  const inputRefs               = useRef([]);
+  const [error, setError]         = useState("");
+  const [success, setSuccess]     = useState("");
+  const inputRefs                 = useRef([]);
 
   function handleDigit(i, val) {
     if (!/^\d?$/.test(val)) return;
@@ -111,7 +111,6 @@ export default function VerifyPage() {
               />
             ))}
           </div>
-
           <button type="submit" className="btn btn-primary btn-lg" disabled={loading} style={{ width: "100%" }}>
             {loading ? "Verifying…" : "Verify email →"}
           </button>
@@ -126,5 +125,13 @@ export default function VerifyPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function VerifyPage() {
+  return (
+    <Suspense fallback={<div style={{ color: "var(--muted)", textAlign: "center", paddingTop: 80 }}>Loading…</div>}>
+      <VerifyInner />
+    </Suspense>
   );
 }
