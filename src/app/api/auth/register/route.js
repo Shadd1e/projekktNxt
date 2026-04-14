@@ -1,11 +1,14 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from "next/server";
-import pool from "@/lib/db";
+import pool, { initDB } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
 import { sendVerificationCode } from "@/lib/email";
 
 export async function POST(request) {
   try {
+    // Ensure tables exist — safe to call every time (CREATE TABLE IF NOT EXISTS)
+    await initDB();
+
     const { email, password } = await request.json();
 
     if (!email || !password)
@@ -24,9 +27,8 @@ export async function POST(request) {
     );
     const user = result.rows[0];
 
-    // Generate 6-digit verification code
     const code      = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     await pool.query(
       "INSERT INTO verification_codes (user_id, code, expires_at) VALUES ($1, $2, $3)",
       [user.id, code, expiresAt]

@@ -1,10 +1,11 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from "next/server";
-import pool from "@/lib/db";
+import pool, { initDB } from "@/lib/db";
 import { verifyPassword, signToken } from "@/lib/auth";
 
 export async function POST(request) {
   try {
+    await initDB();
     const { email, password } = await request.json();
     if (!email || !password)
       return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
