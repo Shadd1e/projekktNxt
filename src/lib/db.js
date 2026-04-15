@@ -61,10 +61,17 @@ export async function initDB() {
       created_at  TIMESTAMPTZ DEFAULT NOW()
     );
 
-    -- Migrate existing users table if it has old columns
+    -- Migrate existing users table
     ALTER TABLE users ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT 0;
     ALTER TABLE users DROP COLUMN IF EXISTS is_paid;
     ALTER TABLE users DROP COLUMN IF EXISTS plan_type;
     ALTER TABLE users DROP COLUMN IF EXISTS plan_expires_at;
+
+    -- Migrate existing payments table
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS bundle_type VARCHAR(50);
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS credits_purchased INTEGER DEFAULT 0;
+
+    -- Migrate existing jobs table
+    ALTER TABLE jobs ADD COLUMN IF NOT EXISTS credits_used INTEGER DEFAULT 0;
   `);
 }
