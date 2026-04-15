@@ -35,7 +35,7 @@ function Sidebar({ user, view, setView, reset, onLogout }) {
   const isUploadActive = ["upload","processing","done","quote"].includes(view);
 
   return (
-    <aside style={{
+    <aside className="dashboard-sidebar" style={{
       width: 220, flexShrink: 0,
       background: "var(--bg2)",
       borderRight: "1px solid var(--border)",
@@ -48,7 +48,7 @@ function Sidebar({ user, view, setView, reset, onLogout }) {
       </Link>
 
       {/* Credit balance */}
-      <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: "var(--radius)", marginBottom: 24, border: "1px solid var(--border)" }}>
+      <div className="dashboard-sidebar-credits" style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: "var(--radius)", marginBottom: 24, border: "1px solid var(--border)" }}>
         <div style={{ fontSize: 10, color: "var(--muted)", fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Credits</div>
         <div style={{ fontSize: 22, fontWeight: 900, color: "var(--accent)", letterSpacing: "-0.02em" }}>
           {(user?.credits || 0).toLocaleString()}
@@ -58,7 +58,7 @@ function Sidebar({ user, view, setView, reset, onLogout }) {
         )}
       </div>
 
-      <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+      <nav className="dashboard-sidebar-nav" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
         {nav.map(n => {
           const active = n.id === "upload" ? isUploadActive : view === n.id;
           return (
@@ -212,10 +212,10 @@ function DashboardInner() {
   if (!user) return null;
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg)" }}>
+    <div className="dashboard-layout" style={{ display: "flex", minHeight: "100vh", background: "var(--bg)" }}>
       <Sidebar user={user} view={view} setView={setView} reset={reset} onLogout={handleLogout} />
 
-      <main style={{ flex: 1, padding: "40px 48px", overflowY: "auto", maxWidth: 780 }}>
+      <main className="dashboard-main" style={{ flex: 1, padding: "40px 48px", overflowY: "auto", maxWidth: 780 }}>
 
         {/* ── CREDITS VIEW ── */}
         {view === "credits" && (
@@ -229,7 +229,7 @@ function DashboardInner() {
 
             {error && <p className="form-error" style={{ marginBottom: 20 }}>⚠ {error}</p>}
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14, marginBottom: 32 }}>
+            <div className="credits-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14, marginBottom: 32 }}>
               {BUNDLES.map(b => (
                 <div key={b.id} style={{
                   padding: 24,
@@ -441,7 +441,7 @@ function DashboardInner() {
             </p>
 
             {/* Stats row */}
-            <div style={{ display: "flex", gap: 12, marginBottom: 28, flexWrap: "wrap" }}>
+            <div className="stats-row" style={{ display: "flex", gap: 12, marginBottom: 28, flexWrap: "wrap" }}>
               {[
                 { val: report.total_paragraphs_checked,    label: "Checked"      },
                 { val: report.paragraphs_paraphrased,      label: "Rewritten"    },
