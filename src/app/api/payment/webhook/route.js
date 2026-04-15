@@ -3,10 +3,8 @@ import { NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { sendPaymentConfirmation } from "@/lib/email";
 
-const FLW_SECRET_HASH = process.env.FLUTTERWAVE_SECRET_HASH || process.env.FLUTTERWAVE_SECRET_KEY;
+const FLW_SECRET_HASH = process.env.FLUTTERWAVE_SECRET_HASH;
 const FLW_SECRET_KEY  = process.env.FLUTTERWAVE_SECRET_KEY;
-
-const PLAN_DURATIONS = { per_doc: null, weekly: 7, monthly: 30 };
 
 export async function POST(request) {
   try {
@@ -18,7 +16,7 @@ export async function POST(request) {
     if (event.event !== "charge.completed")
       return NextResponse.json({ message: "Event ignored." });
 
-    const { tx_ref, status, id: flw_id, amount: paid_amount } = event.data;
+    const { tx_ref, status, id: flw_id } = event.data;
 
     if (status !== "successful") {
       await pool.query("UPDATE payments SET status = 'failed' WHERE flutterwave_ref = $1", [tx_ref]);
@@ -33,9 +31,8 @@ export async function POST(request) {
     if (verifyData.data?.status !== "successful")
       return NextResponse.json({ message: "Verification failed." });
 
-    // Get payment record
     const payResult = await pool.query(
-      "SELECT id, user_id, plan_type, amount, status FROM payments WHERE flutterwave_ref = $1",
+      "SELECT id, user_id, bundle_type, credits_purchased, amount, status FROM payments WHERE flutterwave_ref = $1",
       [tx_ref]
     );
     if (payResult.rows.length === 0)
@@ -45,37 +42,30 @@ export async function POST(request) {
     if (payment.status === "completed")
       return NextResponse.json({ message: "Already processed." });
 
-    // ── Exact amount verification ─────────────────────────────────────────────
+    // Exact amount check
     const expectedAmount = parseFloat(payment.amount);
     const actualAmount   = parseFloat(verifyData.data.amount);
-
     if (actualAmount < expectedAmount) {
-      // Underpayment — flag but do not unlock
-      await pool.query(
-        "UPDATE payments SET status = 'underpaid' WHERE flutterwave_ref = $1",
-        [tx_ref]
-      );
-      console.warn(`[webhook] Underpayment: expected ₦${expectedAmount}, got ₦${actualAmount} — ref: ${tx_ref}`);
-      return NextResponse.json({ message: "Underpayment detected. Access not granted." });
+      await pool.query("UPDATE payments SET status = 'underpaid' WHERE flutterwave_ref = $1", [tx_ref]);
+      console.warn(`[webhook] Underpayment: expected ₦${expectedAmount}, got ₦${actualAmount}`);
+      return NextResponse.json({ message: "Underpayment detected." });
     }
 
-    // Calculate expiry
-    const durationDays = PLAN_DURATIONS[payment.plan_type];
-    const expiresAt    = durationDays
-      ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000)
-      : null;
-
+    // Add credits to user
+    const credits = payment.credits_purchased;
     await pool.query("UPDATE payments SET status = 'completed' WHERE flutterwave_ref = $1", [tx_ref]);
+    await pool.query("UPDATE users SET credits = credits + $1 WHERE id = $2", [credits, payment.user_id]);
     await pool.query(
-      "UPDATE users SET is_paid = TRUE, plan_type = $1, plan_expires_at = $2 WHERE id = $3",
-      [payment.plan_type, expiresAt, payment.user_id]
+      "INSERT INTO credit_log (user_id, delta, reason, ref) VALUES ($1, $2, 'topup', $3)",
+      [payment.user_id, credits, tx_ref]
     );
 
+    // Send confirmation email
     const userResult = await pool.query("SELECT email FROM users WHERE id = $1", [payment.user_id]);
     if (userResult.rows[0])
-      sendPaymentConfirmation(userResult.rows[0].email, payment.plan_type).catch(console.error);
+      sendPaymentConfirmation(userResult.rows[0].email, payment.bundle_type, credits).catch(console.error);
 
-    return NextResponse.json({ message: "Payment processed successfully." });
+    return NextResponse.json({ message: "Credits added successfully." });
   } catch (err) {
     console.error("[payment/webhook]", err);
     return NextResponse.json({ error: "Webhook processing failed." }, { status: 500 });

@@ -2,10 +2,7 @@ import { Pool } from "pg";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl:
-    process.env.NODE_ENV === "production"
-      ? { rejectUnauthorized: false }
-      : false,
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
 });
 
 export default pool;
@@ -19,9 +16,7 @@ export async function initDB() {
       email           VARCHAR(255) UNIQUE NOT NULL,
       password_hash   TEXT NOT NULL,
       is_verified     BOOLEAN DEFAULT FALSE,
-      is_paid         BOOLEAN DEFAULT FALSE,
-      plan_type       VARCHAR(50) DEFAULT 'none',
-      plan_expires_at TIMESTAMPTZ,
+      credits         INTEGER DEFAULT 0,
       created_at      TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -40,19 +35,36 @@ export async function initDB() {
       flutterwave_ref    VARCHAR(255) UNIQUE,
       amount             NUMERIC(10, 2),
       currency           VARCHAR(10) DEFAULT 'NGN',
-      plan_type          VARCHAR(50),
+      bundle_type        VARCHAR(50),
+      credits_purchased  INTEGER DEFAULT 0,
       status             VARCHAR(50) DEFAULT 'pending',
       created_at         TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS jobs (
+      id              SERIAL PRIMARY KEY,
+      user_id         INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      job_id          VARCHAR(255) UNIQUE NOT NULL,
+      status          VARCHAR(50) DEFAULT 'processing',
+      credits_used    INTEGER DEFAULT 0,
+      report          JSONB,
+      created_at      TIMESTAMPTZ DEFAULT NOW(),
+      expires_at      TIMESTAMPTZ DEFAULT NOW() + INTERVAL '1 hour'
+    );
+
+    CREATE TABLE IF NOT EXISTS credit_log (
       id          SERIAL PRIMARY KEY,
       user_id     INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      job_id      VARCHAR(255) UNIQUE NOT NULL,
-      status      VARCHAR(50) DEFAULT 'processing',
-      report      JSONB,
-      created_at  TIMESTAMPTZ DEFAULT NOW(),
-      expires_at  TIMESTAMPTZ DEFAULT NOW() + INTERVAL '1 hour'
+      delta       INTEGER NOT NULL,
+      reason      VARCHAR(100) NOT NULL,
+      ref         VARCHAR(255),
+      created_at  TIMESTAMPTZ DEFAULT NOW()
     );
+
+    -- Migrate existing users table if it has old columns
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT 0;
+    ALTER TABLE users DROP COLUMN IF EXISTS is_paid;
+    ALTER TABLE users DROP COLUMN IF EXISTS plan_type;
+    ALTER TABLE users DROP COLUMN IF EXISTS plan_expires_at;
   `);
 }

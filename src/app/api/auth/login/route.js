@@ -11,7 +11,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
 
     const result = await pool.query(
-      "SELECT id, email, password_hash, is_verified, is_paid, plan_type, plan_expires_at FROM users WHERE email = $1",
+      "SELECT id, email, password_hash, is_verified, credits FROM users WHERE email = $1",
       [email.toLowerCase()]
     );
     if (result.rows.length === 0)
@@ -28,18 +28,12 @@ export async function POST(request) {
         { status: 403 }
       );
 
-    let isPaid = user.is_paid;
-    if (user.plan_expires_at && new Date(user.plan_expires_at) < new Date()) {
-      isPaid = false;
-      await pool.query("UPDATE users SET is_paid = FALSE, plan_type = 'none' WHERE id = $1", [user.id]);
-    }
-
-    const token = signToken({ userId: user.id, email: user.email, isPaid, planType: user.plan_type });
+    const token = signToken({ userId: user.id, email: user.email });
 
     const response = NextResponse.json({
       message: "Login successful.",
       token,
-      user: { id: user.id, email: user.email, isPaid, planType: user.plan_type },
+      user: { id: user.id, email: user.email, credits: user.credits },
     });
 
     response.cookies.set("projekkt_token", token, {
