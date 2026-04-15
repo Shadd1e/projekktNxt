@@ -7,7 +7,8 @@ import { api, saveToken, saveUser } from "@/lib/api";
 function VerifyInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
-  const userId       = searchParams.get("userId");
+  const userId     = searchParams.get("userId");
+  const emailSent  = searchParams.get("emailSent") !== "false";
   const email        = searchParams.get("email");
 
   const [digits, setDigits]       = useState(["", "", "", "", "", ""]);
@@ -77,8 +78,12 @@ function VerifyInner() {
     <div style={{ width: "100%", maxWidth: 420 }}>
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "40px 36px" }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 6, letterSpacing: "-0.02em" }}>Check your email</h1>
+        {emailSent
+          ? <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 32 }}>We sent a 6-digit code to <strong style={{ color: "var(--text)" }}>{email || "your email"}</strong>. Enter it below.</p>
+          : <p style={{ fontSize: 14, color: "#e55", background: "rgba(230,85,85,0.08)", border: "1px solid rgba(230,85,85,0.2)", borderRadius: 8, padding: "10px 14px", marginBottom: 32 }}>⚠ Email delivery failed. Hit <strong>Resend code</strong> below and check your inbox.</p>
+        }
         <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 32 }}>
-          We sent a 6-digit code to <strong style={{ color: "var(--text)" }}>{email || "your email"}</strong>. Enter it below.
+          
         </p>
 
         {error   && <p className="form-error" style={{ marginBottom: 20 }}>⚠ {error}</p>}

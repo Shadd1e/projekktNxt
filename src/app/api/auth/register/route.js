@@ -6,7 +6,6 @@ import { sendVerificationCode } from "@/lib/email";
 
 export async function POST(request) {
   try {
-    // Ensure tables exist — safe to call every time (CREATE TABLE IF NOT EXISTS)
     await initDB();
 
     const { email, password } = await request.json();
@@ -34,12 +33,24 @@ export async function POST(request) {
       [user.id, code, expiresAt]
     );
 
-    await sendVerificationCode(user.email, code);
+    // Send email — non-fatal. If Brevo fails, user can still proceed to verify page
+    // and request a resend. We log the error but don't crash the registration.
+    let emailSent = true;
+    try {
+      await sendVerificationCode(user.email, code);
+    } catch (emailErr) {
+      emailSent = false;
+      console.error("[register] Email failed:", emailErr.message);
+    }
 
     return NextResponse.json({
-      message: "Account created. Check your email for a verification code.",
-      userId:  user.id,
+      message: emailSent
+        ? "Account created. Check your email for a verification code."
+        : "Account created. Email delivery failed — use the resend option on the next page.",
+      userId: user.id,
+      emailSent,
     });
+
   } catch (err) {
     console.error("[register]", err);
     return NextResponse.json({ error: "Something went wrong. Please try again." }, { status: 500 });

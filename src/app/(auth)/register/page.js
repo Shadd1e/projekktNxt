@@ -17,7 +17,8 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       const data = await api.register({ email, password });
-      router.push(`/verify?userId=${data.userId}&email=${encodeURIComponent(email)}`);
+      // Always go to verify page — even if email failed, user can resend there
+      router.push(`/verify?userId=${data.userId}&email=${encodeURIComponent(email)}&emailSent=${data.emailSent}`);
     } catch (err) {
       setError(err.message);
     } finally {
