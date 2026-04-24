@@ -24,10 +24,14 @@ const AUDIENCES = [
 ];
 
 const STEPS = [
-  { n: "01", title: "Upload your .docx",    body: "Drop your document. Up to 10MB. Tables are processed, images skipped." },
-  { n: "02", title: "We scan everything",   body: "Claude detects AI-written text. Brave + OpenAlex catch plagiarism. Internally similar paragraphs are flagged too." },
-  { n: "03", title: "DeepSeek rewrites it", body: "Every flagged section gets a full rewrite pass, then a humanization layer so it reads like you wrote it." },
-  { n: "04", title: "Download your doc",    body: "Rewritten sections are highlighted green. A report shows exactly what changed and why." },
+  { n: "01", title: "Upload your .docx",    body: "Drop your document. Up to 10MB. Tables are processed, images skipped.",
+    explainer: "Supported: essays, dissertations, reports. Just convert your file to .docx in Word or Google Docs first." },
+  { n: "02", title: "We scan everything",   body: "Claude detects AI-written text. Brave + OpenAlex catch plagiarism. Internally similar paragraphs are flagged too.",
+    explainer: "We never store your document permanently — it's automatically deleted from our servers within 1 hour." },
+  { n: "03", title: "DeepSeek rewrites it", body: "Every flagged section gets a full rewrite pass, then a humanization layer so it reads like you wrote it.",
+    explainer: "Your argument and voice are preserved — we restructure sentences, not your ideas." },
+  { n: "04", title: "Download your doc",    body: "Rewritten sections are highlighted green. A report shows exactly what changed and why.",
+    explainer: "You get back the exact same .docx format — fonts, layout, and references all intact." },
 ];
 
 const BUNDLES = [
@@ -47,15 +51,28 @@ const FAQS = [
 ];
 
 export default function HomePage() {
-  const [audienceIdx, setAudienceIdx] = useState(0);
-  const [tick, setTick]               = useState(0);
-  const [faqOpen, setFaqOpen]         = useState(null);
-  const [menuOpen, setMenuOpen]       = useState(false);
+  const [audienceIdx, setAudienceIdx]   = useState(0);
+  const [tick, setTick]                 = useState(0);
+  const [faqOpen, setFaqOpen]           = useState(null);
+  const [menuOpen, setMenuOpen]         = useState(false);
+  const [showOutreach, setShowOutreach] = useState(false);
+  const [wordCount, setWordCount]       = useState("");
 
   useEffect(() => {
     const t = setInterval(() => setTick(p => p + 1), 3200);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    if (localStorage.getItem("outreach_dismissed")) return;
+    const t = setTimeout(() => setShowOutreach(true), 5000);
+    return () => clearTimeout(t);
+  }, []);
+
+  function dismissOutreach() {
+    setShowOutreach(false);
+    localStorage.setItem("outreach_dismissed", "1");
+  }
 
   const tags    = ["Plagiarism", "AI Detection", "Rewriting", "Humanization"];
   const current = tags[tick % tags.length];
@@ -65,7 +82,7 @@ export default function HomePage() {
     <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "'Cabinet Grotesk', sans-serif" }}>
 
       {/* ── Nav ── */}
-      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 99, borderBottom: "1px solid var(--border)", background: "rgba(7,7,9,0.94)", backdropFilter: "blur(20px)" }}>
+      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 99, borderBottom: "1px solid var(--border)", background: "rgba(255,255,255,0.94)", backdropFilter: "blur(20px)" }}>
         <div style={{ maxWidth: 1080, margin: "auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span className="mono" style={{ fontSize: 15, fontWeight: 500, color: "var(--accent)", letterSpacing: "0.1em" }}>PROJEKKT</span>
 
@@ -141,8 +158,8 @@ export default function HomePage() {
               <button key={i} onClick={() => setAudienceIdx(i)}
                 style={{
                   padding: "8px 18px", borderRadius: 20, border: "1px solid",
-                  borderColor: audienceIdx === i ? "rgba(200,255,0,0.35)" : "var(--border)",
-                  background: audienceIdx === i ? "rgba(200,255,0,0.07)" : "transparent",
+                  borderColor: audienceIdx === i ? "rgba(92,59,255,0.35)" : "var(--border)",
+                  background: audienceIdx === i ? "rgba(92,59,255,0.07)" : "transparent",
                   color: audienceIdx === i ? "var(--accent)" : "var(--muted)",
                   fontSize: 13, fontWeight: 600, cursor: "pointer",
                   fontFamily: "'Cabinet Grotesk',sans-serif",
@@ -157,7 +174,7 @@ export default function HomePage() {
           <div key={audienceIdx} style={{
             padding: "clamp(24px,4vw,40px)",
             background: "var(--surface)",
-            border: "1px solid rgba(200,255,0,0.15)",
+            border: "1px solid rgba(92,59,255,0.15)",
             borderRadius: 16,
             animation: "fadeIn 0.3s ease",
           }}>
@@ -179,6 +196,7 @@ export default function HomePage() {
                 <span className="mono" style={{ fontSize: 11, color: "var(--accent)", display: "block", marginBottom: 12, opacity: 0.7 }}>{s.n}</span>
                 <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>{s.title}</h3>
                 <p style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.65 }}>{s.body}</p>
+                {s.explainer && <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginTop: 10 }}>{s.explainer}</p>}
               </div>
             ))}
           </div>
@@ -193,15 +211,39 @@ export default function HomePage() {
           <p style={{ fontSize: 16, color: "var(--text2)", marginBottom: 14 }}>
             ₦0.50 per word. Credits never expire. Bigger bundles include free bonus credits.
           </p>
-          <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 44 }}>
+          <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 32 }}>
             A 2,000-word essay costs ~1,000 credits (₦1,000). A 10,000-word thesis costs ~5,000 credits.
           </p>
+
+          {/* Credit cost estimator */}
+          <div style={{ marginBottom: 40, padding: "18px 20px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+            <label style={{ fontSize: 13, fontWeight: 700, color: "var(--text2)", whiteSpace: "nowrap" }}>Estimate your cost</label>
+            <input
+              type="number"
+              min="0"
+              placeholder="Word count"
+              value={wordCount}
+              onChange={e => setWordCount(e.target.value)}
+              style={{
+                padding: "9px 14px", borderRadius: "var(--radius)",
+                border: "1px solid var(--border2)", background: "var(--surface2)",
+                color: "var(--text)", fontSize: 14, fontFamily: "'Cabinet Grotesk',sans-serif",
+                outline: "none", width: 150,
+              }}
+            />
+            {Number(wordCount) > 0 && (
+              <span style={{ fontSize: 15, fontWeight: 700, color: "var(--accent)" }}>
+                ~{Math.ceil(Number(wordCount) * 0.5).toLocaleString()} credits needed (₦{Math.ceil(Number(wordCount) * 0.5).toLocaleString()})
+              </span>
+            )}
+          </div>
+
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 14 }}>
             {BUNDLES.map(b => (
               <div key={b.label} style={{
                 padding: 24,
-                background: b.popular ? "rgba(200,255,0,0.04)" : "var(--surface)",
-                border: `1px solid ${b.popular ? "rgba(200,255,0,0.25)" : "var(--border)"}`,
+                background: b.popular ? "rgba(92,59,255,0.04)" : "var(--surface)",
+                border: `1px solid ${b.popular ? "rgba(92,59,255,0.25)" : "var(--border)"}`,
                 borderRadius: 14,
                 position: "relative",
                 display: "flex", flexDirection: "column", gap: 10,
@@ -269,9 +311,35 @@ export default function HomePage() {
         </div>
       </footer>
 
+      {/* ── Floating outreach button ── */}
+      {showOutreach && (
+        <div style={{
+          position: "fixed", bottom: 24, right: 24, zIndex: 200,
+          display: "flex", alignItems: "center", gap: 8,
+          animation: "outreachFadeIn 0.5s ease forwards",
+        }}>
+          <a href="mailto:hello@shaddies.space" className="btn btn-primary"
+            style={{ borderRadius: 999, padding: "12px 22px", fontSize: 14, boxShadow: "0 4px 24px rgba(92,59,255,0.28)" }}>
+            Want someone to handle your project? Reach out →
+          </a>
+          <button onClick={dismissOutreach} aria-label="Dismiss"
+            style={{
+              background: "var(--surface)", border: "1px solid var(--border)",
+              borderRadius: "50%", width: 34, height: 34, cursor: "pointer",
+              color: "var(--muted)", fontSize: 17, display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0, transition: "color 0.15s",
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = "var(--text)"}
+            onMouseLeave={e => e.currentTarget.style.color = "var(--muted)"}>
+            ×
+          </button>
+        </div>
+      )}
+
       <style>{`
-        @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:0.4} }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes pulse        { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        @keyframes fadeIn       { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes outreachFadeIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
         .desktop-nav { display: flex; }
         .mobile-menu-btn { display: none; }
         @media (max-width: 640px) {

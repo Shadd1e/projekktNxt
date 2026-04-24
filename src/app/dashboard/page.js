@@ -336,6 +336,7 @@ function DashboardInner() {
                   <div style={{ fontSize: 32, marginBottom: 12 }}>⬆</div>
                   <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>Drop your .docx here</div>
                   <div style={{ fontSize: 13, color: "var(--muted)" }}>or click to browse — max 10MB</div>
+                  <div className="touch-upload-hint" style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>or tap to select file</div>
                   <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 14 }}>
                     <span className="badge badge-green">Tables processed</span>
                     <span className="badge badge-blue">Images skipped</span>
