@@ -5,49 +5,53 @@ import { useEffect, useState } from "react";
 const AUDIENCES = [
   {
     tag:   "For students",
-    label: "Writing a thesis or assignment?",
-    body:  "Projekkt checks your document for plagiarism, flags AI-written sections your lecturers will catch, and rewrites everything so it reads as genuinely yours.",
-    cta:   "Clean my document →",
+    label: "Submitting an assignment or dissertation?",
+    body:  "We read your document like a strict lecturer would — flagging borrowed phrasing, inconsistent tone, and sections that don't sound like you. Then we edit them so the whole thing reads as one coherent, original piece of work.",
+    cta:   "Polish my document →",
   },
   {
     tag:   "For researchers",
-    label: "Academic paper need a clean pass?",
-    body:  "We check against 250 million academic papers via OpenAlex, scan the live web via Brave Search, and rewrite flagged sections while preserving your citations and references.",
-    cta:   "Check my paper →",
+    label: "Academic paper need a clean editorial pass?",
+    body:  "We check your writing against academic databases and the live web for similarity, identify sections that could raise questions, and rewrite them with your argument and citations fully intact.",
+    cta:   "Clean up my paper →",
   },
   {
     tag:   "For professionals",
-    label: "Borrowed too heavily from a source?",
-    body:  "Reports, proposals, whitepapers — we detect similarity, rewrite the offending sections with DeepSeek, then run a humanization pass so nothing sounds AI-generated.",
+    label: "Report or proposal borrowed too heavily from a source?",
+    body:  "Reports, proposals, whitepapers — we identify over-similar passages and rewrite them in a natural, professional register so your document reads as entirely your own work.",
     cta:   "Fix my document →",
   },
 ];
 
 const STEPS = [
-  { n: "01", title: "Upload your .docx",    body: "Drop your document. Up to 10MB. Tables are processed, images skipped.",
+  { n: "01", title: "Upload your .docx",
+    body: "Drop your document. Up to 10MB. Essays, reports, dissertations — if it is in .docx format, we can work with it. Tables are processed; images are left untouched.",
     explainer: "Supported: essays, dissertations, reports. Just convert your file to .docx in Word or Google Docs first." },
-  { n: "02", title: "We scan everything",   body: "Claude detects AI-written text. Brave + OpenAlex catch plagiarism. Internally similar paragraphs are flagged too.",
+  { n: "02", title: "We read it closely",
+    body: "Every paragraph gets a thorough review — checked for similarity to published sources, academic papers, and web content, plus anything that reads inconsistently with the rest of your voice.",
     explainer: "We never store your document permanently — it's automatically deleted from our servers within 1 hour." },
-  { n: "03", title: "DeepSeek rewrites it", body: "Every flagged section gets a full rewrite pass, then a humanization layer so it reads like you wrote it.",
+  { n: "03", title: "We rewrite what needs it",
+    body: "Flagged sections get a full editorial rewrite — restructured, rephrased, and matched to the tone of the rest of your document. Nothing sounds borrowed.",
     explainer: "Your argument and voice are preserved — we restructure sentences, not your ideas." },
-  { n: "04", title: "Download your doc",    body: "Rewritten sections are highlighted green. A report shows exactly what changed and why.",
+  { n: "04", title: "Download your document",
+    body: "Edited sections are highlighted green in the file so you can review every change. A full report shows exactly what was rewritten and why.",
     explainer: "You get back the exact same .docx format — fonts, layout, and references all intact." },
 ];
 
 const BUNDLES = [
-  { label: "Starter",  price: "₦2,000",  credits: "2,000",  desc: "1–2 documents"         },
-  { label: "Standard", price: "₦5,000",  credits: "5,500",  desc: "Most flexible", popular: true, bonus: "+500 free" },
+  { label: "Starter",  price: "₦2,000",  credits: "2,000",  desc: "Best for a single assignment" },
+  { label: "Standard", price: "₦5,000",  credits: "5,500",  desc: "Best value — save 10%", popular: true, bonus: "+500 free" },
   { label: "Pro",      price: "₦10,000", credits: "12,000", desc: "Heavy users",   bonus: "+2,000 free" },
   { label: "Studio",   price: "₦20,000", credits: "26,000", desc: "Teams",         bonus: "+6,000 free" },
 ];
 
 const FAQS = [
-  { q: "What file types do you accept?",           a: "Only .docx files, up to 10MB. If your document is in another format, convert it to .docx first using Word or Google Docs." },
-  { q: "What happens to my document after?",       a: "Your processed file is automatically deleted from our servers after 1 hour. We never store document content permanently." },
-  { q: "Are tables processed?",                    a: "Yes. Table cell text is checked for plagiarism and rewritten if flagged. Table structure — rows, columns, formatting — is fully preserved." },
-  { q: "Do credits expire?",                       a: "No. Credits never expire. Buy once, use whenever you need." },
-  { q: "How accurate is the AI detection?",        a: "We use Claude to score each paragraph for AI likelihood. It's significantly more accurate than basic perplexity scoring and flags the patterns lecturers and AI detectors look for." },
-  { q: "Can I use this for my thesis?",            a: "Yes. Many of our users are students submitting assignments and dissertations. Projekkt checks against academic databases specifically for this reason." },
+  { q: "What file types do you accept?",         a: "Only .docx files, up to 10MB. If your document is in another format, convert it first — Word, Google Docs, and LibreOffice all export to .docx." },
+  { q: "What happens to my document after?",     a: "Your file is automatically deleted from our servers one hour after processing. We never store document content permanently and never use it for any purpose beyond the editing pass." },
+  { q: "Are tables processed?",                  a: "Yes. Text inside table cells is reviewed and rewritten if needed. The table structure — rows, columns, formatting — is fully preserved." },
+  { q: "Do credits expire?",                     a: "No. Credits never expire. Buy once, use whenever you need." },
+  { q: "How does the similarity check work?",    a: "We check your writing against a large index of published academic papers and the live web. Any passage with a high degree of similarity to an existing source gets flagged for rewriting." },
+  { q: "Can I use this for my thesis?",          a: "Yes. Many of our users are students submitting dissertations and final-year projects. The editorial review is thorough enough to catch the kinds of issues academic integrity checks are designed to find." },
 ];
 
 export default function HomePage() {
@@ -74,7 +78,7 @@ export default function HomePage() {
     localStorage.setItem("outreach_dismissed", "1");
   }
 
-  const tags    = ["Plagiarism", "AI Detection", "Rewriting", "Humanization"];
+  const tags    = ["Similarity review", "Editorial rewrite", "Tone matching", "Source checking"];
   const current = tags[tick % tags.length];
   const aud     = AUDIENCES[audienceIdx];
 
@@ -122,16 +126,16 @@ export default function HomePage() {
       <section style={{ paddingTop: "clamp(100px,15vw,140px)", paddingBottom: 80, paddingLeft: 20, paddingRight: 20, maxWidth: 1080, margin: "auto" }}>
         <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 28, padding: "5px 14px", border: "1px solid var(--border)", borderRadius: 20 }}>
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", display: "inline-block", animation: "pulse 2s infinite" }} />
-          <span className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>plagiarism · AI detection · rewriting</span>
+          <span className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>similarity review · editorial rewrite · tone matching</span>
         </div>
 
         <h1 style={{ fontSize: "clamp(36px,7vw,78px)", fontWeight: 900, lineHeight: 1.04, letterSpacing: "-0.03em", marginBottom: 24 }}>
-          Your document.<br />
-          <span style={{ color: "var(--accent)" }}>Undetectable.</span>
+          Your document, polished.<br />
+          <span style={{ color: "var(--accent)" }}>Submit something worth your name.</span>
         </h1>
 
         <p style={{ fontSize: "clamp(15px,2vw,19px)", color: "var(--text2)", maxWidth: 540, lineHeight: 1.7, marginBottom: 36 }}>
-          Upload a .docx. We detect plagiarism, flag AI-written sections, rewrite everything with DeepSeek, and hand you back a clean document — credits deducted only for what you use.
+          Upload your .docx. We review every section, identify anything that could raise questions, and rewrite it so the whole document reads as consistently, naturally yours — credits deducted only for what we actually edit.
         </p>
 
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 56 }}>
@@ -141,7 +145,7 @@ export default function HomePage() {
 
         {/* Rotating tag */}
         <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-          <span className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>Now scanning:</span>
+          <span className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>Now reviewing:</span>
           <span key={current} className="mono badge badge-green" style={{ fontSize: 11, animation: "fadeIn 0.4s ease" }}>{current}</span>
         </div>
       </section>
@@ -212,7 +216,7 @@ export default function HomePage() {
             ₦0.50 per word. Credits never expire. Bigger bundles include free bonus credits.
           </p>
           <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 32 }}>
-            A 2,000-word essay costs ~1,000 credits (₦1,000). A 10,000-word thesis costs ~5,000 credits.
+            A 2,000-word essay costs roughly 1,000 credits. A 10,000-word dissertation costs roughly 5,000 credits.
           </p>
 
           {/* Credit cost estimator */}
@@ -294,7 +298,7 @@ export default function HomePage() {
             Submit something<br /><span style={{ color: "var(--accent)" }}>you're proud of.</span>
           </h2>
           <p style={{ fontSize: 16, color: "var(--text2)", marginBottom: 32, lineHeight: 1.7 }}>
-            Students, researchers, and professionals use Projekkt to clean up documents before they matter.
+            Students, researchers, and professionals use Projekkt to make sure their work reads as their best — before it counts.
           </p>
           <Link href="/register" className="btn btn-primary btn-lg">Get started — it's free to sign up</Link>
         </div>

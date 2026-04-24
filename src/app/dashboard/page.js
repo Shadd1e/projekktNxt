@@ -5,18 +5,18 @@ import Link from "next/link";
 import { api, getUser, clearToken, saveUser } from "@/lib/api";
 
 const PROGRESS_MESSAGES = [
-  { pct: 5,  msg: "Warming up the plagiarism radar…"              },
-  { pct: 14, msg: "Cracking open your document…"                  },
-  { pct: 22, msg: "Reading between the lines — literally…"        },
-  { pct: 32, msg: "Hunting down suspicious paragraphs…"           },
-  { pct: 43, msg: "Cross-referencing 250M academic papers…"       },
-  { pct: 53, msg: "Interrogating the internet for matches…"       },
-  { pct: 62, msg: "Running the Claude AI detection sweep…"        },
-  { pct: 71, msg: "Flagged sections found. Rewriter inbound…"     },
-  { pct: 80, msg: "DeepSeek is rewriting — this takes a moment…" },
-  { pct: 88, msg: "Humanizing the rewrites…"                      },
-  { pct: 94, msg: "Stitching your document back together…"        },
-  { pct: 98, msg: "Final polish in progress…"                     },
+  { pct: 5,  msg: "Opening your document…"                              },
+  { pct: 14, msg: "Reading through every paragraph…"                    },
+  { pct: 22, msg: "Checking structure and consistency…"                 },
+  { pct: 32, msg: "Comparing against published sources…"                },
+  { pct: 43, msg: "Searching academic databases…"                       },
+  { pct: 53, msg: "Checking the live web for similar passages…"         },
+  { pct: 62, msg: "Identifying sections that need attention…"           },
+  { pct: 71, msg: "Flagged sections found. Starting editorial rewrite…" },
+  { pct: 80, msg: "Rewriting flagged sections — this takes a moment…"  },
+  { pct: 88, msg: "Matching tone and flow across the document…"         },
+  { pct: 94, msg: "Stitching your document back together…"              },
+  { pct: 98, msg: "Final review in progress…"                           },
 ];
 
 const BUNDLES = [
@@ -292,7 +292,7 @@ function DashboardInner() {
             <div style={{ marginBottom: 32 }}>
               <h1 style={{ fontSize: 28, fontWeight: 900, marginBottom: 6 }}>Check a document</h1>
               <p style={{ fontSize: 15, color: "var(--text2)" }}>
-                Upload a .docx. We scan it, show you the cost, then you confirm before any credits are spent.
+                Upload your .docx. We preview the editing cost first — you only confirm when you are ready.
               </p>
             </div>
 
@@ -395,7 +395,7 @@ function DashboardInner() {
                 ) : (
                   <div>
                     <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12, padding: "9px 13px", background: "rgba(255,170,0,0.05)", border: "1px solid rgba(255,170,0,0.15)", borderRadius: 8 }}>
-                      ⚠ <strong>{scanResult.price.toLocaleString()} credits</strong> will be deducted from your balance when processing starts. This cannot be undone.
+                      ⚠ <strong>{scanResult.price.toLocaleString()} credits</strong> will be used when editing starts. This cannot be undone.
                     </p>
                     <div style={{ display: "flex", gap: 10 }}>
                       <button className="btn btn-primary btn-lg" style={{ flex: 1 }} onClick={handleUpload}>
@@ -433,12 +433,12 @@ function DashboardInner() {
           <div style={{ animation: "fadeUp 0.35s ease" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 10 }}>
               <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(200,255,0,0.1)", border: "1px solid rgba(200,255,0,0.25)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>✓</div>
-              <h1 style={{ fontSize: 28, fontWeight: 900 }}>Document ready</h1>
+              <h1 style={{ fontSize: 28, fontWeight: 900 }}>Your document is ready.</h1>
             </div>
             <p style={{ fontSize: 15, color: "var(--text2)", marginBottom: 28 }}>
-              {report.paragraphs_paraphrased} paragraph{report.paragraphs_paraphrased !== 1 ? "s" : ""} rewritten
+              {report.paragraphs_paraphrased} section{report.paragraphs_paraphrased !== 1 ? "s" : ""} were edited
               {report.tables_cells_rewritten > 0 && `, ${report.tables_cells_rewritten} table cell${report.tables_cells_rewritten !== 1 ? "s" : ""} rewritten`}.
-              Edited text is highlighted green in the file.
+              Changes are highlighted green in the downloaded file — review everything before you submit.
             </p>
 
             {/* Stats row */}
@@ -473,7 +473,7 @@ function DashboardInner() {
                     <div key={i} style={{ padding: "14px 18px", background: "var(--surface)", border: `1px solid ${item.action === "skipped" ? "var(--border)" : "rgba(200,255,0,0.1)"}`, borderRadius: "var(--radius)" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                         <span className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>¶{item.paragraph}</span>
-                        <span className={`badge ${item.action === "paraphrased" ? "badge-green" : ""}`}>{item.action === "paraphrased" ? "Rewritten" : "Skipped"}</span>
+                        <span className={`badge ${item.action === "paraphrased" ? "badge-green" : ""}`}>{item.action === "paraphrased" ? "Rewritten" : "No changes needed"}</span>
                       </div>
                       {item.preview && <p style={{ fontSize: 13, color: "var(--muted)", fontStyle: "italic", marginBottom: 6, lineHeight: 1.5 }}>"{item.preview}"</p>}
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
