@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, saveToken, saveUser } from "@/lib/api";
+import { api, saveUser } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,7 +17,6 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const data = await api.login({ email, password });
-      saveToken(data.token);
       saveUser(data.user);
       router.push("/dashboard");
     } catch (err) {

@@ -1,11 +1,6 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
-function getToken() {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("projekkt_token");
-}
-export function saveToken(token) { localStorage.setItem("projekkt_token", token); }
-export function clearToken() { localStorage.removeItem("projekkt_token"); localStorage.removeItem("projekkt_user"); }
+export function clearToken() { localStorage.removeItem("projekkt_user"); }
 export function saveUser(user) { localStorage.setItem("projekkt_user", JSON.stringify(user)); }
 export function getUser() {
   if (typeof window === "undefined") return null;
@@ -13,10 +8,9 @@ export function getUser() {
 }
 
 async function request(path, options = {}) {
-  const token   = getToken();
-  const headers = { ...(options.headers || {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  const headers = { ...(options.headers || {}) };
   if (!(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
-  const res  = await fetch(`${BASE}${path}`, { ...options, headers });
+  const res  = await fetch(`${BASE}${path}`, { ...options, headers, credentials: "include" });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "Something went wrong.");
   return data;

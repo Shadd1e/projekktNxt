@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { sendPaymentConfirmation } from "@/lib/email";
+import { sendPaymentConfirmation, sendUnderpaymentAlert } from "@/lib/email";
 
 const FLW_SECRET_HASH = process.env.FLUTTERWAVE_SECRET_HASH;
 const FLW_SECRET_KEY  = process.env.FLUTTERWAVE_SECRET_KEY;
@@ -48,6 +48,9 @@ export async function POST(request) {
     if (actualAmount < expectedAmount) {
       await pool.query("UPDATE payments SET status = 'underpaid' WHERE flutterwave_ref = $1", [tx_ref]);
       console.warn(`[webhook] Underpayment: expected ₦${expectedAmount}, got ₦${actualAmount}`);
+      const underpaidUser = await pool.query("SELECT email FROM users WHERE id = $1", [payment.user_id]);
+      if (underpaidUser.rows[0])
+        sendUnderpaymentAlert(underpaidUser.rows[0].email, expectedAmount, actualAmount).catch(console.error);
       return NextResponse.json({ message: "Underpayment detected." });
     }
 

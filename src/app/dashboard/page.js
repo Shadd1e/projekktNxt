@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, Suspense } from "react";
+import { Component, useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, getUser, clearToken, saveUser } from "@/lib/api";
@@ -20,17 +20,17 @@ const PROGRESS_MESSAGES = [
 ];
 
 const BUNDLES = [
-  { id: "starter",  label: "Starter",  price: "₦2,000",  credits: 2000,  bonus: null,   desc: "Best for 1–2 documents" },
-  { id: "standard", label: "Standard", price: "₦5,000",  credits: 5500,  bonus: "+500", desc: "Most flexible",          popular: true },
+  { id: "starter",  label: "Starter",  price: "₦2,000",  credits: 2000,  bonus: null,   desc: "Best for a single assignment" },
+  { id: "standard", label: "Standard", price: "₦5,000",  credits: 5500,  bonus: "+500", desc: "Best value — save 10%",          popular: true },
   { id: "pro",      label: "Pro",      price: "₦10,000", credits: 12000, bonus: "+2,000", desc: "Heavy users"           },
   { id: "studio",   label: "Studio",   price: "₦20,000", credits: 26000, bonus: "+6,000", desc: "Agencies & teams"      },
 ];
 
 function Sidebar({ user, view, setView, reset, onLogout }) {
   const nav = [
-    { id: "upload",  label: "Check Document" },
-    { id: "credits", label: "Buy Credits"    },
-    { id: "history", label: "History"        },
+    { id: "upload",  icon: "📄", label: "Check Document" },
+    { id: "credits", icon: "💳", label: "Buy Credits"    },
+    { id: "history", icon: "🕓", label: "History"        },
   ];
   const isUploadActive = ["upload","processing","done","quote"].includes(view);
 
@@ -74,7 +74,7 @@ function Sidebar({ user, view, setView, reset, onLogout }) {
                 fontFamily: "'Cabinet Grotesk',sans-serif",
                 textAlign: "left", width: "100%", transition: "all 0.15s",
               }}>
-              {n.label}
+              {n.icon} <span className="mobile-nav-label">{n.label}</span>
             </button>
           );
         })}
@@ -105,6 +105,28 @@ function Sidebar({ user, view, setView, reset, onLogout }) {
   );
 }
 
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(err, info) { console.error("[Dashboard]", err, info); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "var(--bg)", gap: 16, padding: 20, textAlign: "center" }}>
+          <div style={{ fontSize: 32 }}>⚠</div>
+          <h2 style={{ fontSize: 20, fontWeight: 700 }}>Something went wrong.</h2>
+          <p style={{ color: "var(--muted)", fontSize: 14 }}>Please refresh the page to continue.</p>
+          <button className="btn btn-primary" onClick={() => window.location.reload()}>Refresh page</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function DashboardInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
@@ -123,33 +145,50 @@ function DashboardInner() {
   const [error, setError]             = useState("");
   const [payLoading, setPayLoading]   = useState("");
 
-  const fileInputRef  = useRef(null);
-  const progressTimer = useRef(null);
+  const fileInputRef = useRef(null);
+  const pollRef      = useRef(null);
 
   useEffect(() => {
     const u = getUser();
     if (!u) { router.push("/login"); return; }
     setUser(u);
     if (showCredits || (u.credits || 0) < 500) setView("credits");
+    return () => clearInterval(pollRef.current);
   }, []);
 
-  function startProgress() {
+  function startPolling(jobId) {
     let step = 0;
     setProgress(PROGRESS_MESSAGES[0].pct);
     setProgressMsg(PROGRESS_MESSAGES[0].msg);
-    progressTimer.current = setInterval(() => {
-      step++;
-      if (step < PROGRESS_MESSAGES.length) {
-        setProgress(PROGRESS_MESSAGES[step].pct);
-        setProgressMsg(PROGRESS_MESSAGES[step].msg);
+    pollRef.current = setInterval(async () => {
+      try {
+        const res  = await fetch(`/api/document/status?jobId=${encodeURIComponent(jobId)}`, { credentials: "include" });
+        const data = await res.json();
+        if (data.status === "done") {
+          clearInterval(pollRef.current);
+          setProgress(100);
+          setProgressMsg("Done. Your document is ready.");
+          setUser(prev => {
+            const updated = { ...prev, credits: (prev.credits || 0) - (data.credits_used || 0) };
+            saveUser(updated);
+            return updated;
+          });
+          setJobId(jobId);
+          setReport(data.report);
+          setView("done");
+        } else if (data.status === "failed") {
+          clearInterval(pollRef.current);
+          setError("Processing failed. Please try again.");
+          setView("upload");
+        } else {
+          step = Math.min(step + 1, PROGRESS_MESSAGES.length - 1);
+          setProgress(PROGRESS_MESSAGES[step].pct);
+          setProgressMsg(PROGRESS_MESSAGES[step].msg);
+        }
+      } catch {
+        // Network hiccup — keep polling
       }
-    }, 14000);
-  }
-
-  function stopProgress() {
-    clearInterval(progressTimer.current);
-    setProgress(100);
-    setProgressMsg("Done. Your document is ready.");
+    }, 4000);
   }
 
   function handleFileSelect(f) {
@@ -172,23 +211,35 @@ function DashboardInner() {
 
   async function handleUpload() {
     if (!file) return;
-    setError(""); setView("processing"); startProgress();
+    setError(""); setView("processing");
+    setProgress(PROGRESS_MESSAGES[0].pct);
+    setProgressMsg(PROGRESS_MESSAGES[0].msg);
     try {
       const data = await api.uploadDocument(file);
-      stopProgress();
-      // Deduct credits from local user state
-      const updated = { ...user, credits: (user.credits || 0) - (data.credits_used || 0) };
-      setUser(updated); saveUser(updated);
-      setJobId(data.jobId); setReport(data.report); setView("done");
+      if (data.status === "done") {
+        // Synchronous response (backward compat)
+        setProgress(100);
+        setProgressMsg("Done. Your document is ready.");
+        setUser(prev => {
+          const updated = { ...prev, credits: (prev.credits || 0) - (data.credits_used || 0) };
+          saveUser(updated);
+          return updated;
+        });
+        setJobId(data.jobId); setReport(data.report); setView("done");
+      } else {
+        // Async response — poll for real status
+        setJobId(data.jobId);
+        startPolling(data.jobId);
+      }
     } catch (err) {
-      stopProgress(); setError(err.message); setView("upload");
+      clearInterval(pollRef.current);
+      setError(err.message); setView("upload");
     }
   }
 
   async function handleDownload() {
     try {
-      const token = localStorage.getItem("projekkt_token");
-      const res   = await fetch(api.getDownloadUrl(jobId), { headers: { Authorization: `Bearer ${token}` } });
+      const res   = await fetch(api.getDownloadUrl(jobId), { credentials: "include" });
       if (!res.ok) { setError("Download failed. File may have expired."); return; }
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);
@@ -206,7 +257,7 @@ function DashboardInner() {
     } catch (err) { setError(err.message); setPayLoading(""); }
   }
 
-  function reset() { setFile(null); setJobId(null); setReport(null); setScanResult(null); setError(""); setProgress(0); setView("upload"); }
+  function reset() { clearInterval(pollRef.current); setFile(null); setJobId(null); setReport(null); setScanResult(null); setError(""); setProgress(0); setView("upload"); }
   function handleLogout() { clearToken(); router.push("/"); }
 
   if (!user) return null;
@@ -506,8 +557,13 @@ function DashboardInner() {
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<div style={{ color: "var(--muted)", textAlign: "center", paddingTop: 80 }}>Loading…</div>}>
-      <DashboardInner />
-    </Suspense>
+    <ErrorBoundary>
+      <Suspense fallback={<div style={{ color: "var(--muted)", textAlign: "center", paddingTop: 80 }}>Loading…</div>}>
+        <DashboardInner />
+      </Suspense>
+      <style>{`
+        @media (max-width: 768px) { .mobile-nav-label { display: none; } }
+      `}</style>
+    </ErrorBoundary>
   );
 }

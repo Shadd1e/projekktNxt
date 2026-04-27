@@ -11,7 +11,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "User ID and code are required." }, { status: 400 });
 
     const result = await pool.query(
-      "SELECT id, code, expires_at, used FROM verification_codes WHERE user_id = $1 AND used = FALSE ORDER BY created_at DESC LIMIT 1",
+      "SELECT id, code, expires_at, used, attempts FROM verification_codes WHERE user_id = $1 AND used = FALSE ORDER BY created_at DESC LIMIT 1",
       [userId]
     );
     if (result.rows.length === 0)
@@ -20,10 +20,14 @@ export async function POST(request) {
     const record = result.rows[0];
     if (record.used)
       return NextResponse.json({ error: "This code has already been used." }, { status: 400 });
+    if (record.attempts >= 5)
+      return NextResponse.json({ error: "Too many attempts. Please request a new code." }, { status: 400 });
     if (new Date(record.expires_at) < new Date())
       return NextResponse.json({ error: "This code has expired. Please request a new one." }, { status: 400 });
-    if (record.code !== code.trim())
+    if (record.code !== code.trim()) {
+      await pool.query("UPDATE verification_codes SET attempts = attempts + 1 WHERE id = $1", [record.id]);
       return NextResponse.json({ error: "Incorrect code. Please try again." }, { status: 400 });
+    }
 
     await pool.query("UPDATE verification_codes SET used = TRUE WHERE id = $1", [record.id]);
     await pool.query("UPDATE users SET is_verified = TRUE WHERE id = $1", [userId]);

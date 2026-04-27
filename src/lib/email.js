@@ -49,6 +49,29 @@ export async function sendPaymentConfirmation(email, bundle, credits) {
   });
 }
 
+export async function sendUnderpaymentAlert(email, expected, actual) {
+  return sendEmail({
+    to: email,
+    subject: "Payment issue — Projekkt",
+    htmlContent: `
+      <div style="font-family:'Helvetica Neue',sans-serif;max-width:480px;margin:auto;padding:40px 32px;background:#070709;border-radius:12px;">
+        <div style="margin-bottom:32px;"><span style="font-size:22px;font-weight:800;letter-spacing:2px;color:#ffffff;">PROJEKKT</span></div>
+        <h2 style="color:#ffffff;font-size:20px;font-weight:700;margin:0 0 12px;">Payment amount mismatch</h2>
+        <p style="color:#9ca3af;font-size:15px;line-height:1.6;margin:0 0 16px;">
+          We received a payment of <strong style="color:#ffffff;">₦${actual.toLocaleString()}</strong> but your order total was
+          <strong style="color:#ffffff;">₦${expected.toLocaleString()}</strong>.
+          Because the amounts do not match, your credits have not been added.
+        </p>
+        <p style="color:#9ca3af;font-size:15px;line-height:1.6;margin:0 0 28px;">
+          Please contact our support team with your payment reference and we will resolve this for you as soon as possible.
+        </p>
+        <a href="mailto:support@shaddies.space" style="display:inline-block;padding:14px 28px;background:#c8ff00;color:#070709;font-weight:700;font-size:14px;border-radius:6px;text-decoration:none;">Contact Support →</a>
+        <p style="color:#6b7280;font-size:12px;margin-top:28px;">If you did not make this payment, you can safely ignore this email.</p>
+      </div>
+    `,
+  });
+}
+
 export async function sendDocumentReady(email, jobId) {
   return sendEmail({
     to: email,

@@ -7,7 +7,11 @@ const pool = new Pool({
 
 export default pool;
 
+let initialized = false;
+
 export async function initDB() {
+  if (initialized) return;
+  initialized = true;
   await pool.query(`
     CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -26,6 +30,7 @@ export async function initDB() {
       code       VARCHAR(6) NOT NULL,
       expires_at TIMESTAMPTZ NOT NULL,
       used       BOOLEAN DEFAULT FALSE,
+      attempts   INTEGER DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -73,5 +78,8 @@ export async function initDB() {
 
     -- Migrate existing jobs table
     ALTER TABLE jobs ADD COLUMN IF NOT EXISTS credits_used INTEGER DEFAULT 0;
+
+    -- Migrate existing verification_codes table
+    ALTER TABLE verification_codes ADD COLUMN IF NOT EXISTS attempts INTEGER DEFAULT 0;
   `);
 }

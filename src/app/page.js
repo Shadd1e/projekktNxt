@@ -207,6 +207,34 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ── Privacy ── */}
+      <section style={{ padding: "72px 20px", borderTop: "1px solid var(--border)" }}>
+        <div style={{ maxWidth: 1080, margin: "auto" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20 }}>
+            <div style={{ width: 42, height: 42, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent)", flexShrink: 0 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+            </div>
+            <p className="mono" style={{ fontSize: 11, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Privacy</p>
+          </div>
+          <h2 style={{ fontSize: "clamp(26px,4vw,42px)", fontWeight: 900, letterSpacing: "-0.025em", marginBottom: 28 }}>Your document is private.</h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 600 }}>
+            {[
+              "Files are deleted from our servers 1 hour after processing.",
+              "We never read, store, or sell your document content.",
+              "Your personal details are never shared with third parties.",
+            ].map((point, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 14, fontSize: 16, color: "var(--text2)", lineHeight: 1.6 }}>
+                <span style={{ color: "var(--accent)", fontSize: 18, marginTop: 2, flexShrink: 0, fontWeight: 700 }}>✓</span>
+                {point}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── Pricing ── */}
       <section id="pricing" style={{ padding: "72px 20px", borderTop: "1px solid var(--border)" }}>
         <div style={{ maxWidth: 1080, margin: "auto" }}>

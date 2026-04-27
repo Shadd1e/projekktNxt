@@ -2,7 +2,7 @@
 import { useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { api, saveToken, saveUser } from "@/lib/api";
+import { api, saveUser } from "@/lib/api";
 
 function VerifyInner() {
   const router       = useRouter();
@@ -46,7 +46,6 @@ function VerifyInner() {
     setLoading(true);
     try {
       const data = await api.verifyCode({ userId: parseInt(userId), code });
-      saveToken(data.token);
       saveUser(data.user);
       router.push("/dashboard");
     } catch (err) {
