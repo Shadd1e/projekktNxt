@@ -397,7 +397,7 @@ function DashboardInner() {
             </div>
 
             {!scanResult ? (
-              <button className="btn btn-outline btn-lg" onClick={handleScan} disabled={!file || scanning || (user.credits || 0) < 500} style={{ width: "100%" }}>
+              <button className="btn btn-outline btn-lg" onClick={handleScan} disabled={!file || scanning} style={{ width: "100%" }}>
                 {scanning ? (
                   <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid var(--border2)", borderTopColor: "var(--text)", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
@@ -413,31 +413,48 @@ function DashboardInner() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {[
                       { label: "Word count", value: `${scanResult.word_count.toLocaleString()} words` },
+                      { label: "Free words", value: `${Math.min(scanResult.word_count, scanResult.free_words || 2000).toLocaleString()} of ${(scanResult.free_words || 2000).toLocaleString()} included`, accent: true },
                       { label: "Tables", value: `${scanResult.table_count} table${scanResult.table_count !== 1 ? "s" : ""} — will be processed` },
                       ...(scanResult.image_count > 0 ? [{ label: "Images", value: `${scanResult.image_count} image${scanResult.image_count !== 1 ? "s" : ""} — not scanned`, warn: true }] : []),
                     ].map(row => (
                       <div key={row.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 14 }}>
                         <span style={{ color: "var(--muted)" }}>{row.label}</span>
-                        <span style={{ fontWeight: 600, color: row.warn ? "var(--warning)" : "var(--text)" }}>{row.value}</span>
+                        <span style={{ fontWeight: 600, color: row.warn ? "var(--warning)" : row.accent ? "var(--accent)" : "var(--text)" }}>{row.value}</span>
                       </div>
                     ))}
                     <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ fontWeight: 700 }}>Credits required</span>
-                      <span style={{ fontSize: 22, fontWeight: 900, color: "var(--accent)" }}>{scanResult.price.toLocaleString()}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
-                      <span style={{ color: "var(--muted)" }}>Your balance</span>
-                      <span style={{ color: (user.credits || 0) >= scanResult.price ? "var(--text2)" : "var(--danger)", fontWeight: 600 }}>
-                        {(user.credits || 0).toLocaleString()} credits
+                      <span style={{ fontSize: 22, fontWeight: 900, color: scanResult.credits_needed === 0 ? "var(--accent)" : "var(--text)" }}>
+                        {scanResult.credits_needed === 0 ? "Free ✓" : scanResult.credits_needed.toLocaleString()}
                       </span>
                     </div>
+                    {scanResult.credits_needed > 0 && (
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
+                        <span style={{ color: "var(--muted)" }}>Your balance</span>
+                        <span style={{ color: (user.credits || 0) >= scanResult.credits_needed ? "var(--text2)" : "var(--danger)", fontWeight: 600 }}>
+                          {(user.credits || 0).toLocaleString()} credits
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {(user.credits || 0) < scanResult.price ? (
+                {scanResult.credits_needed === 0 ? (
+                  <div>
+                    <p style={{ fontSize: 12, color: "var(--accent)", marginBottom: 12, padding: "9px 13px", background: "rgba(200,255,0,0.06)", border: "1px solid rgba(200,255,0,0.2)", borderRadius: 8 }}>
+                      🎉 This document fits within your free 2,000 words — no credits needed.
+                    </p>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <button className="btn btn-primary btn-lg" style={{ flex: 1 }} onClick={handleUpload}>
+                        Process document — Free
+                      </button>
+                      <button className="btn btn-ghost" onClick={() => { setFile(null); setScanResult(null); }}>Change</button>
+                    </div>
+                  </div>
+                ) : (user.credits || 0) < scanResult.credits_needed ? (
                   <div>
                     <p className="form-error" style={{ marginBottom: 12 }}>
-                      ⚠ Insufficient credits. You need {(scanResult.price - (user.credits || 0)).toLocaleString()} more.
+                      ⚠ Insufficient credits. You need {(scanResult.credits_needed - (user.credits || 0)).toLocaleString()} more.
                     </p>
                     <button className="btn btn-primary btn-lg" style={{ width: "100%" }} onClick={() => setView("credits")}>
                       Top up credits →
@@ -446,11 +463,11 @@ function DashboardInner() {
                 ) : (
                   <div>
                     <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12, padding: "9px 13px", background: "rgba(255,170,0,0.05)", border: "1px solid rgba(255,170,0,0.15)", borderRadius: 8 }}>
-                      ⚠ <strong>{scanResult.price.toLocaleString()} credits</strong> will be used when editing starts. This cannot be undone.
+                      ⚠ <strong>{scanResult.credits_needed.toLocaleString()} credits</strong> will be used when editing starts. This cannot be undone.
                     </p>
                     <div style={{ display: "flex", gap: 10 }}>
                       <button className="btn btn-primary btn-lg" style={{ flex: 1 }} onClick={handleUpload}>
-                        Process document — {scanResult.price.toLocaleString()} credits
+                        Process document — {scanResult.credits_needed.toLocaleString()} credits
                       </button>
                       <button className="btn btn-ghost" onClick={() => { setFile(null); setScanResult(null); }}>Change</button>
                     </div>

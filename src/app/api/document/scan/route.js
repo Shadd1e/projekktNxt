@@ -2,20 +2,23 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from "next/server";
 import { getUserFromRequest } from "@/lib/auth";
 
-// ── Pricing: ₦1 per 2 words (₦0.50 per word), minimum ₦500 ──────────────────
-const PRICE_PER_WORD = 0.50;
-const MINIMUM_PRICE  = 500;
+// ── Credit pricing ────────────────────────────────────────────────────────────
+// 0.5 credits per word, minimum 500 credits.
+// First FREE_WORDS words are always free (subtracted before calculation).
+// ─────────────────────────────────────────────────────────────────────────────
+const CREDIT_COST_PER_WORD = 0.5;
+const MINIMUM_CREDITS      = 500;
+const FREE_WORDS           = 2000;   // first 2,000 words are on us
 
-function calculatePrice(wordCount) {
-  const raw = Math.ceil(wordCount * PRICE_PER_WORD);
-  return Math.max(raw, MINIMUM_PRICE);
+function calculateCredits(wordCount) {
+  const billableWords = Math.max(wordCount - FREE_WORDS, 0);
+  if (billableWords === 0) return 0;                          // fully free
+  const raw = Math.ceil(billableWords * CREDIT_COST_PER_WORD);
+  return Math.max(raw, MINIMUM_CREDITS);
 }
 
-// ── Parse .docx in JS using raw XML ──────────────────────────────────────────
-// We use the JSZip-compatible approach via ArrayBuffer — no heavy dependencies
+// ── Forward file to Python analysis service ───────────────────────────────────
 async function analyseDocx(buffer) {
-  // We forward the file to the Python service for analysis
-  // Python returns: word_count, paragraph_count, table_count, image_count
   const PYTHON_SERVICE_URL  = process.env.PYTHON_SERVICE_URL;
   const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
 
@@ -53,16 +56,28 @@ export async function POST(request) {
     if (buffer.byteLength > 10 * 1024 * 1024)
       return NextResponse.json({ error: "File exceeds 10MB limit." }, { status: 400 });
 
-    const analysis = await analyseDocx(buffer);
-    const price    = calculatePrice(analysis.word_count);
+    const analysis      = await analyseDocx(buffer);
+    const wordCount     = analysis.word_count;
+    const credits_needed = calculateCredits(wordCount);
+
+    // Human-readable breakdown shown in the UI
+    const billableWords = Math.max(wordCount - FREE_WORDS, 0);
+    let breakdown;
+    if (credits_needed === 0) {
+      breakdown = `${wordCount.toLocaleString()} words — fully covered by your free ${FREE_WORDS.toLocaleString()} words`;
+    } else {
+      breakdown = `${wordCount.toLocaleString()} words − ${FREE_WORDS.toLocaleString()} free = ${billableWords.toLocaleString()} billable × 0.5 cr = ${credits_needed.toLocaleString()} credits`;
+    }
 
     return NextResponse.json({
-      word_count:      analysis.word_count,
+      word_count:      wordCount,
       paragraph_count: analysis.paragraph_count,
       table_count:     analysis.table_count,
       image_count:     analysis.image_count,
-      price,
-      price_breakdown: `₦0.50 × ${analysis.word_count} words = ₦${price.toLocaleString()}`,
+      credits_needed,
+      free_words:      FREE_WORDS,
+      billable_words:  billableWords,
+      breakdown,
     });
   } catch (err) {
     console.error("[document/scan]", err);

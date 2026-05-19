@@ -7,7 +7,18 @@ import { sendDocumentReady } from "@/lib/email";
 const PYTHON_SERVICE_URL   = process.env.PYTHON_SERVICE_URL;
 const INTERNAL_API_SECRET  = process.env.INTERNAL_API_SECRET;
 const MAX_FILE_SIZE        = 10 * 1024 * 1024;
+
+// ── Credit pricing (must mirror scan/route.js exactly) ────────────────────────
 const CREDIT_COST_PER_WORD = 0.5;
+const MINIMUM_CREDITS      = 500;
+const FREE_WORDS           = 2000;   // first 2,000 words are free
+
+function calculateCredits(wordCount) {
+  const billableWords = Math.max(wordCount - FREE_WORDS, 0);
+  if (billableWords === 0) return 0;
+  const raw = Math.ceil(billableWords * CREDIT_COST_PER_WORD);
+  return Math.max(raw, MINIMUM_CREDITS);
+}
 
 async function _processInBackground({ jobId, userId, userEmail, fileBuffer, fileName, creditsNeeded }) {
   try {
@@ -31,11 +42,16 @@ async function _processInBackground({ jobId, userId, userEmail, fileBuffer, file
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query("UPDATE users SET credits = credits - $1 WHERE id = $2", [creditsNeeded, userId]);
-      await client.query(
-        "INSERT INTO credit_log (user_id, delta, reason, ref) VALUES ($1, $2, 'document_scan', $3)",
-        [userId, -creditsNeeded, pythonJobId]
-      );
+
+      // Only deduct credits if any are owed (free docs cost 0)
+      if (creditsNeeded > 0) {
+        await client.query("UPDATE users SET credits = credits - $1 WHERE id = $2", [creditsNeeded, userId]);
+        await client.query(
+          "INSERT INTO credit_log (user_id, delta, reason, ref) VALUES ($1, $2, 'document_scan', $3)",
+          [userId, -creditsNeeded, pythonJobId]
+        );
+      }
+
       await client.query(
         "UPDATE jobs SET status = 'done', report = $1, job_id = $2 WHERE job_id = $3",
         [JSON.stringify(report), pythonJobId, jobId]
@@ -64,9 +80,7 @@ export async function POST(request) {
 
     const userResult = await pool.query("SELECT id, email, credits FROM users WHERE id = $1", [user.userId]);
     const dbUser     = userResult.rows[0];
-
-    if (!dbUser || dbUser.credits < 500)
-      return NextResponse.json({ error: "Insufficient credits. Please top up to continue." }, { status: 403 });
+    if (!dbUser) return NextResponse.json({ error: "User not found." }, { status: 404 });
 
     const formData = await request.formData();
     const file     = formData.get("file");
@@ -84,17 +98,20 @@ export async function POST(request) {
     // Quick scan to determine credit cost
     const scanForm = new FormData();
     scanForm.append("file", new Blob([fileBuffer], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }), file.name);
-    const scanRes       = await fetch(`${PYTHON_SERVICE_URL}/analyse`, {
+    const scanRes  = await fetch(`${PYTHON_SERVICE_URL}/analyse`, {
       method: "POST", headers: { "x-internal-secret": INTERNAL_API_SECRET }, body: scanForm,
     });
     const scanData      = scanRes.ok ? await scanRes.json() : { word_count: 0 };
-    const creditsNeeded = Math.max(Math.ceil(scanData.word_count * CREDIT_COST_PER_WORD), 500);
+    const creditsNeeded = calculateCredits(scanData.word_count);
 
-    if (dbUser.credits < creditsNeeded)
+    // If creditsNeeded > 0, verify the user has enough
+    if (creditsNeeded > 0 && dbUser.credits < creditsNeeded) {
       return NextResponse.json({
         error: `This document requires ${creditsNeeded.toLocaleString()} credits. You have ${dbUser.credits.toLocaleString()}. Please top up.`,
-        credits_needed: creditsNeeded, credits_available: dbUser.credits,
+        credits_needed:    creditsNeeded,
+        credits_available: dbUser.credits,
       }, { status: 403 });
+    }
 
     // Create job record and return immediately — Python runs in background
     const jobRecord = await pool.query(
