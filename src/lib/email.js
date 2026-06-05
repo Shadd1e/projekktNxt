@@ -87,3 +87,29 @@ export async function sendDocumentReady(email, jobId) {
     `,
   });
 }
+
+export async function sendPasswordReset(email, token) {
+  const resetUrl = `${APP_URL}/reset-password?token=${token}`;
+  return sendEmail({
+    to: email,
+    subject: "Reset your Projekkt password",
+    htmlContent: `
+      <div style="font-family:'Helvetica Neue',sans-serif;max-width:480px;margin:auto;padding:40px 32px;background:#070709;border-radius:12px;">
+        <div style="margin-bottom:32px;"><span style="font-size:22px;font-weight:800;letter-spacing:2px;color:#ffffff;">PROJEKKT</span></div>
+        <h2 style="color:#ffffff;font-size:20px;font-weight:700;margin:0 0 12px;">Reset your password</h2>
+        <p style="color:#9ca3af;font-size:15px;line-height:1.6;margin:0 0 28px;">
+          We received a request to reset the password for this account.
+          Click the button below to set a new password. This link expires in 1 hour.
+        </p>
+        <a href="${resetUrl}" style="display:inline-block;padding:14px 28px;background:#c8ff00;color:#070709;font-weight:700;font-size:14px;border-radius:6px;text-decoration:none;">Reset password →</a>
+        <p style="color:#6b7280;font-size:12px;margin-top:28px;">
+          If you didn't request a password reset, you can safely ignore this email.
+          Your password will not change.
+        </p>
+        <p style="color:#4b5563;font-size:11px;margin-top:8px;word-break:break-all;">
+          Or copy this link: ${resetUrl}
+        </p>
+      </div>
+    `,
+  });
+}
