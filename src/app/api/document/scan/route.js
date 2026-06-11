@@ -1,6 +1,5 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from "next/server";
-import { getUserFromRequest } from "@/lib/auth";
 
 // ── Pricing (internal — never sent to frontend directly) ──────────────────────
 // Users see naira and section counts. They never see "credits" or "₦0.50/word".
@@ -20,8 +19,8 @@ export function nairaToCredits(naira) {
 
 export async function POST(request) {
   try {
-    const user = getUserFromRequest(request);
-    if (!user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    // Scanning is intentionally public — no auth required.
+    // Auth is only needed at the upload/process step (when credits are charged).
 
     const formData = await request.formData();
     const file     = formData.get("file");

@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 
 const AUDIENCES = [
   {
@@ -177,6 +177,192 @@ function FaqItem({ q, a, isOpen, onToggle }) {
   );
 }
 
+// ── Hero drop-zone + guest scan widget ───────────────────────────────────────
+function HeroScanner() {
+  const [file, setFile]           = useState(null);
+  const [dragging, setDragging]   = useState(false);
+  const [scanning, setScanning]   = useState(false);
+  const [result, setResult]       = useState(null);
+  const [error, setError]         = useState("");
+  const inputRef                  = useRef(null);
+
+  const pickFile = (f) => {
+    if (!f) return;
+    if (!f.name.endsWith(".docx")) { setError("Only .docx files are accepted."); return; }
+    if (f.size > 10 * 1024 * 1024) { setError("File must be under 10 MB."); return; }
+    setFile(f); setResult(null); setError("");
+  };
+
+  const onDrop = useCallback((e) => {
+    e.preventDefault(); setDragging(false);
+    pickFile(e.dataTransfer.files?.[0]);
+  }, []);
+
+  const onDragOver = (e) => { e.preventDefault(); setDragging(true); };
+  const onDragLeave = () => setDragging(false);
+
+  async function handleScan() {
+    if (!file) return;
+    setScanning(true); setError(""); setResult(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/document/scan", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Scan failed.");
+      setResult(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  function reset() { setFile(null); setResult(null); setError(""); }
+
+  // ── After scan: show result + gate ───────────────────────────────────────
+  if (result) {
+    const clean = result.verdict === "clean";
+    return (
+      <div style={{
+        background:"var(--surface)", border:"1px solid var(--border)",
+        borderRadius:16, padding:"28px 24px", maxWidth:420, width:"100%",
+        boxShadow:"0 8px 40px rgba(92,59,255,0.08)",
+      }}>
+        {/* Verdict badge */}
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20 }}>
+          <span style={{
+            fontSize:22, fontWeight:900,
+            color: clean ? "var(--accent)" : "var(--text)",
+          }}>
+            {clean ? "✓ Document looks clean" : "⚠ Issues found"}
+          </span>
+        </div>
+
+        {/* Stats */}
+        <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:20 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, color:"var(--text2)" }}>
+            <span>Sections scanned</span>
+            <span style={{ fontWeight:700, color:"var(--text)" }}>{result.totalSections}</span>
+          </div>
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, color:"var(--text2)" }}>
+            <span>Sections flagged</span>
+            <span style={{ fontWeight:700, color: result.flaggedSections > 0 ? "#e53e3e" : "var(--accent)" }}>
+              {result.flaggedSections}
+            </span>
+          </div>
+          {result.costLine && (
+            <div style={{ marginTop:4, padding:"10px 14px", background:"rgba(229,62,62,0.06)", borderRadius:8, border:"1px solid rgba(229,62,62,0.15)", fontSize:13, color:"#c0392b", fontWeight:600 }}>
+              {result.costLine}
+            </div>
+          )}
+          {result.issueLines?.map((line, i) => (
+            <div key={i} style={{ fontSize:12, color:"var(--muted)", paddingLeft:4 }}>· {line}</div>
+          ))}
+        </div>
+
+        {/* Gate: must log in / sign up to process */}
+        <div style={{ borderTop:"1px solid var(--border)", paddingTop:18 }}>
+          <p style={{ fontSize:13, color:"var(--text2)", marginBottom:14, lineHeight:1.6 }}>
+            {clean
+              ? "Your document is clear. Sign in to run a full editorial pass and download the cleaned version."
+              : "To fix these issues and download your corrected document, create a free account or log in."}
+          </p>
+          <div style={{ display:"flex", gap:10 }}>
+            <Link href="/register" className="btn btn-primary" style={{ flex:1, textAlign:"center", fontSize:14 }}>
+              Create free account →
+            </Link>
+            <Link href="/login" className="btn btn-outline" style={{ flex:"0 0 auto", fontSize:14 }}>
+              Log in
+            </Link>
+          </div>
+        </div>
+
+        <button onClick={reset} style={{ marginTop:14, background:"none", border:"none", cursor:"pointer", fontSize:12, color:"var(--muted)", textDecoration:"underline", display:"block", width:"100%", textAlign:"center" }}>
+          Scan a different document
+        </button>
+      </div>
+    );
+  }
+
+  // ── Drop zone ─────────────────────────────────────────────────────────────
+  return (
+    <div style={{ maxWidth:420, width:"100%" }}>
+      <div
+        onDrop={onDrop} onDragOver={onDragOver} onDragLeave={onDragLeave}
+        onClick={() => !file && inputRef.current?.click()}
+        style={{
+          background: dragging ? "rgba(92,59,255,0.06)" : "var(--surface)",
+          border: `2px dashed ${dragging ? "var(--accent)" : "var(--border)"}`,
+          borderRadius:16, padding:"36px 28px", cursor: file ? "default" : "pointer",
+          transition:"all 0.2s", textAlign:"center",
+          boxShadow:"0 8px 40px rgba(92,59,255,0.07)",
+        }}
+      >
+        <input ref={inputRef} type="file" accept=".docx" style={{ display:"none" }}
+          onChange={e => pickFile(e.target.files?.[0])} />
+
+        {!file ? (
+          <>
+            <div style={{ fontSize:40, marginBottom:12 }}>📄</div>
+            <div style={{ fontSize:16, fontWeight:700, color:"var(--text)", marginBottom:6 }}>
+              Drop your .docx here
+            </div>
+            <div style={{ fontSize:13, color:"var(--muted)", marginBottom:16 }}>
+              or <span style={{ color:"var(--accent)", fontWeight:600, cursor:"pointer" }}>browse your files</span>
+            </div>
+            <div style={{ fontSize:11, color:"var(--muted)" }}>
+              Up to 10 MB · .docx only · No login needed to scan
+            </div>
+          </>
+        ) : (
+          <div style={{ display:"flex", alignItems:"center", gap:12, textAlign:"left" }}>
+            <span style={{ fontSize:28 }}>📄</span>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:14, fontWeight:700, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                {file.name}
+              </div>
+              <div style={{ fontSize:12, color:"var(--muted)" }}>
+                {(file.size / 1024).toFixed(0)} KB
+              </div>
+            </div>
+            <button onClick={e => { e.stopPropagation(); reset(); }}
+              style={{ background:"none", border:"none", cursor:"pointer", color:"var(--muted)", fontSize:18, padding:4 }}>✕</button>
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <div style={{ marginTop:10, fontSize:13, color:"#e53e3e", textAlign:"center" }}>{error}</div>
+      )}
+
+      <button
+        onClick={handleScan}
+        disabled={!file || scanning}
+        className="btn btn-primary btn-lg"
+        style={{ width:"100%", marginTop:14, opacity: (!file || scanning) ? 0.5 : 1 }}
+      >
+        {scanning ? (
+          <span style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+            <span style={{ display:"inline-block", width:14, height:14, border:"2px solid rgba(0,0,0,0.2)", borderTopColor:"#000", borderRadius:"50%", animation:"spin 0.7s linear infinite" }} />
+            Scanning…
+          </span>
+        ) : "Scan document →"}
+      </button>
+
+      <div style={{ marginTop:12, display:"flex", justifyContent:"center", gap:20, flexWrap:"wrap" }}>
+        {["No login required", "Free to scan", "Results in seconds"].map(t => (
+          <span key={t} style={{ fontSize:11, color:"var(--muted)", display:"flex", alignItems:"center", gap:4 }}>
+            <span style={{ color:"var(--accent)", fontWeight:700 }}>✓</span> {t}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function HomePage() {
   const [faqOpen, setFaqOpen]       = useState(null);
@@ -269,12 +455,9 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Right: animated card */}
-          <div style={{ position:"relative", display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <HeroCard />
-            {/* Extra floating shapes outside the card */}
-            <div style={{ position:"absolute", top:-24, left:8, width:36, height:36, border:"2px solid rgba(92,59,255,0.12)", borderRadius:"50%", animation:"pkfloat2 7s ease-in-out infinite 0.5s", pointerEvents:"none" }} />
-            <div style={{ position:"absolute", bottom:-16, right:24, width:22, height:22, border:"1.5px solid rgba(92,59,255,0.1)", transform:"rotate(30deg)", animation:"pkfloat1 5.5s ease-in-out infinite 2s", pointerEvents:"none" }} />
+          {/* Right: live drop-zone + scan widget */}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <HeroScanner />
           </div>
         </div>
       </section>
