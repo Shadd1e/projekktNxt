@@ -4,35 +4,114 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api, getUser, clearToken, saveUser } from "@/lib/api";
 
-const PROGRESS_MESSAGES = [
-  { pct: 5,  msg: "Opening your document…"                              },
-  { pct: 14, msg: "Reading through every paragraph…"                    },
-  { pct: 22, msg: "Checking structure and consistency…"                 },
-  { pct: 32, msg: "Comparing against published sources…"                },
-  { pct: 43, msg: "Searching academic databases…"                       },
-  { pct: 53, msg: "Checking the live web for similar passages…"         },
-  { pct: 62, msg: "Identifying sections that need attention…"           },
-  { pct: 71, msg: "Flagged sections found. Starting editorial rewrite…" },
-  { pct: 80, msg: "Rewriting flagged sections — this takes a moment…"  },
-  { pct: 88, msg: "Matching tone and flow across the document…"         },
-  { pct: 94, msg: "Stitching your document back together…"              },
-  { pct: 98, msg: "Final review in progress…"                           },
+// ── Scan stages shown while prescan runs ─────────────────────────────────────
+const SCAN_STAGES = [
+  { id: "open",      label: "Opening document",         detail: "Reading file structure and paragraphs…"           },
+  { id: "ai",        label: "AI detection",             detail: "Checking for machine-generated patterns…"         },
+  { id: "web",       label: "Web search",               detail: "Comparing against live web content…"              },
+  { id: "academic",  label: "Academic databases",       detail: "Scanning published papers and journals…"          },
+  { id: "internal",  label: "Internal similarity",      detail: "Checking for repeated passages within document…"  },
+  { id: "calculate", label: "Calculating edit scope",   detail: "Counting words that need rewriting…"              },
+];
+
+// ── Process stages shown while document is being fixed ───────────────────────
+const PROCESS_STAGES = [
+  { id: "queue",     label: "Queued",                   detail: "Your document is in the processing queue…"        },
+  { id: "rewrite",   label: "Rewriting flagged sections", detail: "Carefully rewriting each flagged paragraph…"    },
+  { id: "tables",    label: "Processing tables",        detail: "Rewriting table cells where needed…"              },
+  { id: "tone",      label: "Matching tone & flow",     detail: "Ensuring rewrites match your document's voice…"   },
+  { id: "stitch",    label: "Rebuilding document",      detail: "Stitching everything back together…"              },
+  { id: "review",    label: "Final review",             detail: "Running one last check before delivery…"          },
 ];
 
 const BUNDLES = [
-  { id: "starter",  label: "Starter",  price: "₦2,000",  credits: 2000,  bonus: null,   desc: "Best for a single assignment" },
-  { id: "standard", label: "Standard", price: "₦5,000",  credits: 5500,  bonus: "+500", desc: "Best value — save 10%",          popular: true },
-  { id: "pro",      label: "Pro",      price: "₦10,000", credits: 12000, bonus: "+2,000", desc: "Heavy users"           },
-  { id: "studio",   label: "Studio",   price: "₦20,000", credits: 26000, bonus: "+6,000", desc: "Agencies & teams"      },
+  { id: "starter",  label: "Starter",  price: "₦2,000",  credits: 2000,  bonus: null,     desc: "Best for a single assignment" },
+  { id: "standard", label: "Standard", price: "₦5,000",  credits: 5500,  bonus: "+500",   desc: "Best value — save 10%", popular: true },
+  { id: "pro",      label: "Pro",      price: "₦10,000", credits: 12000, bonus: "+2,000", desc: "Heavy users" },
+  { id: "studio",   label: "Studio",   price: "₦20,000", credits: 26000, bonus: "+6,000", desc: "Agencies & teams" },
 ];
 
+// ── Animated stage tracker component ─────────────────────────────────────────
+function StageTracker({ stages, activeIndex, title, subtitle }) {
+  return (
+    <div style={{ width: "100%", maxWidth: 480 }}>
+      <h2 style={{ fontSize: 22, fontWeight: 900, marginBottom: 6, textAlign: "center" }}>{title}</h2>
+      <p style={{ fontSize: 14, color: "var(--muted)", marginBottom: 32, textAlign: "center", lineHeight: 1.5 }}>{subtitle}</p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+        {stages.map((stage, i) => {
+          const done    = i < activeIndex;
+          const active  = i === activeIndex;
+          const pending = i > activeIndex;
+
+          return (
+            <div key={stage.id} style={{ display: "flex", gap: 16, alignItems: "flex-start", position: "relative" }}>
+              {/* Connector line */}
+              {i < stages.length - 1 && (
+                <div style={{
+                  position: "absolute", left: 15, top: 32, width: 2, height: "calc(100% - 8px)",
+                  background: done ? "rgba(200,255,0,0.4)" : "var(--border)",
+                  transition: "background 0.5s ease",
+                }} />
+              )}
+
+              {/* Icon */}
+              <div style={{
+                width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 13, fontWeight: 700, zIndex: 1,
+                background: done    ? "rgba(200,255,0,0.15)"  :
+                            active  ? "rgba(200,255,0,0.08)"  : "var(--surface)",
+                border: done    ? "1.5px solid rgba(200,255,0,0.5)"  :
+                        active  ? "1.5px solid rgba(200,255,0,0.8)"  : "1.5px solid var(--border)",
+                color: done ? "var(--accent)" : active ? "var(--accent)" : "var(--muted)",
+                boxShadow: active ? "0 0 12px rgba(200,255,0,0.2)" : "none",
+                transition: "all 0.4s ease",
+              }}>
+                {done ? "✓" : active ? (
+                  <span style={{
+                    width: 10, height: 10, borderRadius: "50%",
+                    border: "2px solid var(--border2)", borderTopColor: "var(--accent)",
+                    animation: "spin 0.8s linear infinite", display: "inline-block",
+                  }} />
+                ) : (
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--border2)", display: "inline-block" }} />
+                )}
+              </div>
+
+              {/* Text */}
+              <div style={{ paddingBottom: 24, flex: 1 }}>
+                <div style={{
+                  fontSize: 14, fontWeight: active ? 700 : done ? 600 : 400,
+                  color: pending ? "var(--muted)" : "var(--text)",
+                  transition: "all 0.3s",
+                }}>{stage.label}</div>
+                {active && (
+                  <div style={{
+                    fontSize: 12, color: "var(--accent)", marginTop: 2, lineHeight: 1.4,
+                    animation: "fadeUp 0.3s ease",
+                  }}>{stage.detail}</div>
+                )}
+                {done && (
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Complete</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
 function Sidebar({ user, view, setView, reset, onLogout }) {
   const nav = [
     { id: "upload",  icon: "📄", label: "Check Document" },
     { id: "credits", icon: "💳", label: "Buy Credits"    },
     { id: "history", icon: "🕓", label: "History"        },
   ];
-  const isUploadActive = ["upload","processing","done","quote"].includes(view);
+  const isUploadActive = ["upload", "scanning", "processing", "done", "quote"].includes(view);
 
   return (
     <aside className="dashboard-sidebar" style={{
@@ -47,7 +126,6 @@ function Sidebar({ user, view, setView, reset, onLogout }) {
         <span className="mono" style={{ fontSize: 14, fontWeight: 500, color: "var(--accent)", letterSpacing: "0.12em" }}>PROJEKKT</span>
       </Link>
 
-      {/* Credit balance */}
       <div className="dashboard-sidebar-credits" style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: "var(--radius)", marginBottom: 24, border: "1px solid var(--border)" }}>
         <div style={{ fontSize: 10, color: "var(--muted)", fontFamily: "'DM Mono',monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Credits</div>
         <div style={{ fontSize: 22, fontWeight: 900, color: "var(--accent)", letterSpacing: "-0.02em" }}>
@@ -105,11 +183,9 @@ function Sidebar({ user, view, setView, reset, onLogout }) {
   );
 }
 
+// ── Error boundary ────────────────────────────────────────────────────────────
 class ErrorBoundary extends Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false };
-  }
+  constructor(props) { super(props); this.state = { hasError: false }; }
   static getDerivedStateFromError() { return { hasError: true }; }
   componentDidCatch(err, info) { console.error("[Dashboard]", err, info); }
   render() {
@@ -127,119 +203,158 @@ class ErrorBoundary extends Component {
   }
 }
 
+// ── Main dashboard ────────────────────────────────────────────────────────────
 function DashboardInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const showCredits  = searchParams.get("showCredits") === "1";
 
-  const [user, setUser]               = useState(null);
-  const [view, setView]               = useState("upload");
-  const [file, setFile]               = useState(null);
-  const [dragOver, setDragOver]       = useState(false);
-  const [scanning, setScanning]       = useState(false);
-  const [scanResult, setScanResult]   = useState(null);
-  const [progress, setProgress]       = useState(0);
-  const [progressMsg, setProgressMsg] = useState(PROGRESS_MESSAGES[0].msg);
-  const [jobId, setJobId]             = useState(null);
-  const [report, setReport]           = useState(null);
-  const [error, setError]             = useState("");
-  const [payLoading, setPayLoading]   = useState("");
+  const [user, setUser]             = useState(null);
+  const [view, setView]             = useState("upload");
+  const [file, setFile]             = useState(null);
+  const [dragOver, setDragOver]     = useState(false);
+  const [scanResult, setScanResult] = useState(null);
+  const [scanStage, setScanStage]   = useState(0);
+  const [procStage, setProcStage]   = useState(0);
+  const [jobId, setJobId]           = useState(null);
+  const [report, setReport]         = useState(null);
+  const [error, setError]           = useState("");
+  const [payLoading, setPayLoading] = useState("");
 
   const fileInputRef = useRef(null);
-  const pollRef      = useRef(null);
+  const scanPollRef  = useRef(null);
+  const procPollRef  = useRef(null);
+  const stageTimers  = useRef([]);
 
   useEffect(() => {
     const u = getUser();
     if (!u) { router.push("/login"); return; }
     setUser(u);
     if (showCredits || (u.credits || 0) < 500) setView("credits");
-    return () => clearInterval(pollRef.current);
+    return () => _clearAll();
   }, []);
 
-  function startPolling(jobId) {
-    let step = 0;
-    setProgress(PROGRESS_MESSAGES[0].pct);
-    setProgressMsg(PROGRESS_MESSAGES[0].msg);
-    pollRef.current = setInterval(async () => {
-      try {
-        const res  = await fetch(`/api/document/status?jobId=${encodeURIComponent(jobId)}`, { credentials: "include" });
-        const data = await res.json();
-        if (data.status === "done") {
-          clearInterval(pollRef.current);
-          setProgress(100);
-          setProgressMsg("Done. Your document is ready.");
-          setUser(prev => {
-            const updated = { ...prev, credits: (prev.credits || 0) - (data.credits_used || 0) };
-            saveUser(updated);
-            return updated;
-          });
-          setJobId(jobId);
-          setReport(data.report);
-          setView("done");
-        } else if (data.status === "failed") {
-          clearInterval(pollRef.current);
-          setError("Processing failed. Please try again.");
-          setView("upload");
-        } else {
-          step = Math.min(step + 1, PROGRESS_MESSAGES.length - 1);
-          setProgress(PROGRESS_MESSAGES[step].pct);
-          setProgressMsg(PROGRESS_MESSAGES[step].msg);
-        }
-      } catch {
-        // Network hiccup — keep polling
-      }
-    }, 4000);
+  function _clearAll() {
+    clearInterval(scanPollRef.current);
+    clearInterval(procPollRef.current);
+    stageTimers.current.forEach(clearTimeout);
+    stageTimers.current = [];
   }
 
-  function handleFileSelect(f) {
-    setError(""); setScanResult(null);
-    if (!f) return;
-    if (!f.name.endsWith(".docx")) { setError("Only .docx files are accepted."); return; }
-    if (f.size > 10 * 1024 * 1024) { setError("File exceeds 10MB limit."); return; }
-    setFile(f);
+  // Advance scan stages on a timer to look alive while polling
+  function _animateScanStages() {
+    setScanStage(0);
+    SCAN_STAGES.forEach((_, i) => {
+      if (i === 0) return;
+      const t = setTimeout(() => setScanStage(i), i * 7000);
+      stageTimers.current.push(t);
+    });
+  }
+
+  function _animateProcStages() {
+    setProcStage(0);
+    PROCESS_STAGES.forEach((_, i) => {
+      if (i === 0) return;
+      const t = setTimeout(() => setProcStage(i), i * 22000);
+      stageTimers.current.push(t);
+    });
   }
 
   async function handleScan() {
     if (!file) return;
-    setScanning(true); setError("");
+    setError(""); setView("scanning"); setScanStage(0);
+    _animateScanStages();
+
     try {
-      const data = await api.scanDocument(file);
-      setScanResult(data);
-    } catch (err) { setError(err.message); }
-    finally { setScanning(false); }
+      const fd = new FormData();
+      fd.append("file", file);
+      const res  = await fetch("/api/document/scan", { method: "POST", body: fd, credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Scan failed.");
+
+      const { scanJobId } = data;
+
+      // Poll scan-status
+      scanPollRef.current = setInterval(async () => {
+        try {
+          const r    = await fetch(`/api/document/scan-status?scanJobId=${encodeURIComponent(scanJobId)}`, { credentials: "include" });
+          const poll = await r.json();
+          if (poll.status === "done") {
+            clearInterval(scanPollRef.current);
+            stageTimers.current.forEach(clearTimeout);
+            setScanStage(SCAN_STAGES.length); // all complete
+            setScanResult(poll.result);
+            setView("upload"); // go back to upload view to show quote
+          } else if (poll.status === "failed") {
+            clearInterval(scanPollRef.current);
+            stageTimers.current.forEach(clearTimeout);
+            setError("Scan failed. Please try again.");
+            setView("upload");
+          }
+        } catch { /* network hiccup — keep polling */ }
+      }, 3500);
+
+    } catch (err) {
+      clearInterval(scanPollRef.current);
+      stageTimers.current.forEach(clearTimeout);
+      setError(err.message);
+      setView("upload");
+    }
   }
 
   async function handleUpload() {
     if (!file) return;
-    setError(""); setView("processing");
-    setProgress(PROGRESS_MESSAGES[0].pct);
-    setProgressMsg(PROGRESS_MESSAGES[0].msg);
+    setError(""); setView("processing"); setProcStage(0);
+    _animateProcStages();
+
     try {
-      const data = await api.uploadDocument(file);
+      const fd = new FormData();
+      fd.append("file", file);
+      const res  = await fetch("/api/document/upload", { method: "POST", body: fd, credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed.");
+
       if (data.status === "done") {
-        // Synchronous response (backward compat)
-        setProgress(100);
-        setProgressMsg("Done. Your document is ready.");
-        setUser(prev => {
-          const updated = { ...prev, credits: (prev.credits || 0) - (data.credits_used || 0) };
-          saveUser(updated);
-          return updated;
-        });
+        // Synchronous fallback
+        _clearAll();
+        setProcStage(PROCESS_STAGES.length);
+        setUser(prev => { const u = { ...prev, credits: (prev.credits || 0) - (data.credits_used || 0) }; saveUser(u); return u; });
         setJobId(data.jobId); setReport(data.report); setView("done");
-      } else {
-        // Async response — poll for real status
-        setJobId(data.jobId);
-        startPolling(data.jobId);
+        return;
       }
+
+      setJobId(data.jobId);
+
+      procPollRef.current = setInterval(async () => {
+        try {
+          const r    = await fetch(`/api/document/status?jobId=${encodeURIComponent(data.jobId)}`, { credentials: "include" });
+          const poll = await r.json();
+          if (poll.status === "done") {
+            clearInterval(procPollRef.current);
+            stageTimers.current.forEach(clearTimeout);
+            setProcStage(PROCESS_STAGES.length);
+            setUser(prev => { const u = { ...prev, credits: (prev.credits || 0) - (poll.credits_used || 0) }; saveUser(u); return u; });
+            setReport(poll.report); setView("done");
+          } else if (poll.status === "failed") {
+            clearInterval(procPollRef.current);
+            stageTimers.current.forEach(clearTimeout);
+            setError(poll.fail_reason === "insufficient_credits"
+              ? "Insufficient credits. Please top up and try again."
+              : "Processing failed. Please try again.");
+            setView("upload");
+          }
+        } catch { /* keep polling */ }
+      }, 5000);
+
     } catch (err) {
-      clearInterval(pollRef.current);
+      _clearAll();
       setError(err.message); setView("upload");
     }
   }
 
   async function handleDownload() {
     try {
-      const res   = await fetch(api.getDownloadUrl(jobId), { credentials: "include" });
+      const res = await fetch(`/api/document/download?jobId=${jobId}`, { credentials: "include" });
       if (!res.ok) { setError("Download failed. File may have expired."); return; }
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);
@@ -252,15 +367,32 @@ function DashboardInner() {
   async function handleTopup(bundleId) {
     setPayLoading(bundleId); setError("");
     try {
-      const data = await api.topupCredits(bundleId);
+      const res  = await fetch("/api/credits/topup", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bundle: bundleId }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Payment failed.");
       window.location.href = data.paymentUrl;
     } catch (err) { setError(err.message); setPayLoading(""); }
   }
 
-  function reset() { clearInterval(pollRef.current); setFile(null); setJobId(null); setReport(null); setScanResult(null); setError(""); setProgress(0); setView("upload"); }
+  function handleFileSelect(f) {
+    setError(""); setScanResult(null);
+    if (!f) return;
+    if (!f.name.endsWith(".docx")) { setError("Only .docx files are accepted."); return; }
+    if (f.size > 10 * 1024 * 1024) { setError("File exceeds 10MB limit."); return; }
+    setFile(f);
+  }
+
+  function reset() {
+    _clearAll();
+    setFile(null); setJobId(null); setReport(null); setScanResult(null);
+    setError(""); setScanStage(0); setProcStage(0); setView("upload");
+  }
+
   function handleLogout() { clearToken(); router.push("/"); }
 
   if (!user) return null;
+
+  const scanData = scanResult;
 
   return (
     <div className="dashboard-layout" style={{ display: "flex", minHeight: "100vh", background: "var(--bg)" }}>
@@ -287,16 +419,12 @@ function DashboardInner() {
                   background: b.popular ? "rgba(200,255,0,0.04)" : "var(--surface)",
                   border: `1px solid ${b.popular ? "rgba(200,255,0,0.22)" : "var(--border)"}`,
                   borderRadius: "var(--radius-lg)",
-                  position: "relative",
-                  display: "flex", flexDirection: "column", gap: 12,
-                  transition: "border-color 0.15s, transform 0.15s",
-                  cursor: "pointer",
+                  position: "relative", display: "flex", flexDirection: "column", gap: 12,
+                  transition: "border-color 0.15s, transform 0.15s", cursor: "pointer",
                 }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = b.popular ? "rgba(200,255,0,0.4)" : "var(--border2)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = b.popular ? "rgba(200,255,0,0.22)" : "var(--border)"; e.currentTarget.style.transform = "translateY(0)"; }}>
-                  {b.popular && (
-                    <span className="badge badge-green" style={{ position: "absolute", top: 16, right: 16 }}>Popular</span>
-                  )}
+                  {b.popular && <span className="badge badge-green" style={{ position: "absolute", top: 16, right: 16 }}>Popular</span>}
                   <div>
                     <div className="mono" style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{b.label}</div>
                     <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: "-0.03em" }}>{b.price}</div>
@@ -315,7 +443,6 @@ function DashboardInner() {
               ))}
             </div>
 
-            {/* Cost reference */}
             <div style={{ padding: 20, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", fontSize: 13 }}>
               <div className="mono" style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14 }}>Credit cost guide</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
@@ -368,8 +495,7 @@ function DashboardInner() {
                 border: `2px dashed ${dragOver ? "rgba(200,255,0,0.7)" : file ? "rgba(200,255,0,0.4)" : "var(--border2)"}`,
                 borderRadius: "var(--radius-lg)", padding: "40px 24px",
                 cursor: "pointer", background: dragOver ? "rgba(200,255,0,0.03)" : "var(--surface)",
-                textAlign: "center", marginBottom: 16,
-                transition: "all 0.15s",
+                textAlign: "center", marginBottom: 16, transition: "all 0.15s",
               }}>
               <input ref={fileInputRef} type="file" accept=".docx" style={{ display: "none" }} onChange={e => handleFileSelect(e.target.files[0])} />
               {file ? (
@@ -396,65 +522,75 @@ function DashboardInner() {
               )}
             </div>
 
-            {!scanResult ? (
-              <button className="btn btn-outline btn-lg" onClick={handleScan} disabled={!file || scanning} style={{ width: "100%" }}>
-                {scanning ? (
-                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid var(--border2)", borderTopColor: "var(--text)", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
-                    Scanning document…
-                  </span>
-                ) : "Scan document →"}
+            {/* Quote or scan button */}
+            {!scanData ? (
+              <button className="btn btn-outline btn-lg" onClick={handleScan} disabled={!file} style={{ width: "100%" }}>
+                Scan document →
               </button>
             ) : (
               <div style={{ animation: "fadeUp 0.3s ease" }}>
-                {/* Quote card */}
                 <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: 20, marginBottom: 14 }}>
                   <div className="mono" style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 16 }}>Document analysis</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {[
-                      { label: "Word count", value: `${scanResult.word_count.toLocaleString()} words` },
-                      { label: "Free words", value: `${Math.min(scanResult.word_count, scanResult.free_words || 2000).toLocaleString()} of ${(scanResult.free_words || 2000).toLocaleString()} included`, accent: true },
-                      { label: "Tables", value: `${scanResult.table_count} table${scanResult.table_count !== 1 ? "s" : ""} — will be processed` },
-                      ...(scanResult.image_count > 0 ? [{ label: "Images", value: `${scanResult.image_count} image${scanResult.image_count !== 1 ? "s" : ""} — not scanned`, warn: true }] : []),
-                    ].map(row => (
-                      <div key={row.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 14 }}>
-                        <span style={{ color: "var(--muted)" }}>{row.label}</span>
-                        <span style={{ fontWeight: 600, color: row.warn ? "var(--warning)" : row.accent ? "var(--accent)" : "var(--text)" }}>{row.value}</span>
+
+                  {/* Verdict badge */}
+                  <div style={{ marginBottom: 16 }}>
+                    {scanData.verdict === "clean" ? (
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", background: "rgba(200,255,0,0.08)", border: "1px solid rgba(200,255,0,0.25)", borderRadius: 8 }}>
+                        <span style={{ color: "var(--accent)", fontSize: 16 }}>✓</span>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: "var(--accent)" }}>Document looks clean</span>
                       </div>
-                    ))}
-                    <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontWeight: 700 }}>Credits required</span>
-                      <span style={{ fontSize: 22, fontWeight: 900, color: scanResult.credits_needed === 0 ? "var(--accent)" : "var(--text)" }}>
-                        {scanResult.credits_needed === 0 ? "Free ✓" : scanResult.credits_needed.toLocaleString()}
-                      </span>
-                    </div>
-                    {scanResult.credits_needed > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
-                        <span style={{ color: "var(--muted)" }}>Your balance</span>
-                        <span style={{ color: (user.credits || 0) >= scanResult.credits_needed ? "var(--text2)" : "var(--danger)", fontWeight: 600 }}>
-                          {(user.credits || 0).toLocaleString()} credits
-                        </span>
+                    ) : (
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 14px", background: "rgba(255,100,50,0.06)", border: "1px solid rgba(255,100,50,0.2)", borderRadius: 8 }}>
+                        <span style={{ fontSize: 16 }}>⚠</span>
+                        <span style={{ fontWeight: 700, fontSize: 14 }}>Issues found</span>
                       </div>
                     )}
                   </div>
+
+                  {/* Issue breakdown */}
+                  {scanData.issueLines?.length > 0 && (
+                    <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 6 }}>
+                      {scanData.issueLines.map((line, i) => (
+                        <div key={i} style={{ fontSize: 13, color: "var(--text2)", display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ color: "var(--warning)", fontSize: 11 }}>●</span> {line}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Cost line */}
+                  {scanData.costLine && (
+                    <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontWeight: 700 }}>Editing cost</span>
+                      <span style={{ fontSize: 20, fontWeight: 900, color: "var(--text)" }}>{scanData.costLine.split("—")[1]?.trim()}</span>
+                    </div>
+                  )}
+
+                  {scanData._internal?.credits_needed > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, marginTop: 8 }}>
+                      <span style={{ color: "var(--muted)" }}>Your balance</span>
+                      <span style={{ color: (user.credits || 0) >= scanData._internal.credits_needed ? "var(--text2)" : "var(--danger)", fontWeight: 600 }}>
+                        {(user.credits || 0).toLocaleString()} credits
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                {scanResult.credits_needed === 0 ? (
+                {/* Action buttons */}
+                {scanData.verdict === "clean" || scanData._internal?.credits_needed === 0 ? (
                   <div>
                     <p style={{ fontSize: 12, color: "var(--accent)", marginBottom: 12, padding: "9px 13px", background: "rgba(200,255,0,0.06)", border: "1px solid rgba(200,255,0,0.2)", borderRadius: 8 }}>
-                      🎉 This document fits within your free 2,000 words — no credits needed.
+                      🎉 This document fits within your free allowance — no credits needed.
                     </p>
                     <div style={{ display: "flex", gap: 10 }}>
-                      <button className="btn btn-primary btn-lg" style={{ flex: 1 }} onClick={handleUpload}>
-                        Process document — Free
-                      </button>
+                      <button className="btn btn-primary btn-lg" style={{ flex: 1 }} onClick={handleUpload}>Process document — Free</button>
                       <button className="btn btn-ghost" onClick={() => { setFile(null); setScanResult(null); }}>Change</button>
                     </div>
                   </div>
-                ) : (user.credits || 0) < scanResult.credits_needed ? (
+                ) : (user.credits || 0) < (scanData._internal?.credits_needed || 0) ? (
                   <div>
                     <p className="form-error" style={{ marginBottom: 12 }}>
-                      ⚠ Insufficient credits. You need {(scanResult.credits_needed - (user.credits || 0)).toLocaleString()} more.
+                      ⚠ Insufficient credits. You need {((scanData._internal.credits_needed || 0) - (user.credits || 0)).toLocaleString()} more.
                     </p>
                     <button className="btn btn-primary btn-lg" style={{ width: "100%" }} onClick={() => setView("credits")}>
                       Top up credits →
@@ -463,11 +599,11 @@ function DashboardInner() {
                 ) : (
                   <div>
                     <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12, padding: "9px 13px", background: "rgba(255,170,0,0.05)", border: "1px solid rgba(255,170,0,0.15)", borderRadius: 8 }}>
-                      ⚠ <strong>{scanResult.credits_needed.toLocaleString()} credits</strong> will be used when editing starts. This cannot be undone.
+                      ⚠ <strong>{(scanData._internal?.credits_needed || 0).toLocaleString()} credits</strong> will be used when editing starts. This cannot be undone.
                     </p>
                     <div style={{ display: "flex", gap: 10 }}>
                       <button className="btn btn-primary btn-lg" style={{ flex: 1 }} onClick={handleUpload}>
-                        Process document — {scanResult.credits_needed.toLocaleString()} credits
+                        Process document — {(scanData._internal?.credits_needed || 0).toLocaleString()} credits
                       </button>
                       <button className="btn btn-ghost" onClick={() => { setFile(null); setScanResult(null); }}>Change</button>
                     </div>
@@ -478,20 +614,32 @@ function DashboardInner() {
           </div>
         )}
 
+        {/* ── SCANNING VIEW ── */}
+        {view === "scanning" && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "70vh", animation: "fadeUp 0.35s ease" }}>
+            <StageTracker
+              stages={SCAN_STAGES}
+              activeIndex={Math.min(scanStage, SCAN_STAGES.length - 1)}
+              title="Scanning your document"
+              subtitle="We're running full AI, plagiarism, and similarity checks. This takes 1–3 minutes."
+            />
+            <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 36, textAlign: "center" }}>
+              Keep this tab open — we'll show your results here when done.
+            </p>
+          </div>
+        )}
+
         {/* ── PROCESSING VIEW ── */}
         {view === "processing" && (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", textAlign: "center", animation: "fadeUp 0.35s ease" }}>
-            <div style={{ width: 56, height: 56, borderRadius: "50%", border: "3px solid var(--border2)", borderTopColor: "var(--accent)", animation: "spin 0.9s linear infinite", marginBottom: 32 }} />
-            <h2 style={{ fontSize: 22, fontWeight: 900, marginBottom: 8 }}>Analysing your document</h2>
-            <p style={{ fontSize: 15, color: "var(--accent)", marginBottom: 28, fontWeight: 600 }}>{progressMsg}</p>
-            <div style={{ width: "100%", maxWidth: 400, marginBottom: 10 }}>
-              <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${progress}%` }} />
-              </div>
-            </div>
-            <span className="mono" style={{ fontSize: 12, color: "var(--muted)" }}>{progress}%</span>
-            <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 28, maxWidth: 360, lineHeight: 1.6 }}>
-              Keep this tab open. Processing time depends on document length — typically 2–5 minutes.
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "70vh", animation: "fadeUp 0.35s ease" }}>
+            <StageTracker
+              stages={PROCESS_STAGES}
+              activeIndex={Math.min(procStage, PROCESS_STAGES.length - 1)}
+              title="Fixing your document"
+              subtitle="Our editor is rewriting every flagged section. Longer documents take 3–6 minutes."
+            />
+            <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 36, textAlign: "center" }}>
+              Keep this tab open — your download will appear here automatically.
             </p>
           </div>
         )}
@@ -509,13 +657,12 @@ function DashboardInner() {
               Changes are highlighted green in the downloaded file — review everything before you submit.
             </p>
 
-            {/* Stats row */}
             <div className="stats-row" style={{ display: "flex", gap: 12, marginBottom: 28, flexWrap: "wrap" }}>
               {[
                 { val: report.total_paragraphs_checked,    label: "Checked"      },
                 { val: report.paragraphs_paraphrased,      label: "Rewritten"    },
                 { val: report.tables_cells_rewritten || 0, label: "Table cells"  },
-                { val: report.references_skipped,           label: "Refs skipped" },
+                { val: report.references_skipped,          label: "Refs skipped" },
               ].map(s => (
                 <div key={s.label} style={{ padding: "14px 20px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", minWidth: 90, flex: 1 }}>
                   <div style={{ fontSize: 26, fontWeight: 900, color: "var(--accent)", letterSpacing: "-0.02em" }}>{s.val}</div>
@@ -567,6 +714,7 @@ function DashboardInner() {
             </div>
           </div>
         )}
+
       </main>
     </div>
   );
