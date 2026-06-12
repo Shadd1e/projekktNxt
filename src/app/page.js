@@ -210,7 +210,26 @@ function HeroScanner() {
       const res = await fetch("/api/document/scan", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Scan failed.");
-      setResult(data);
+
+      // Poll for result
+      const { scanJobId } = data;
+      await new Promise((resolve, reject) => {
+        const interval = setInterval(async () => {
+          try {
+            const r    = await fetch(`/api/document/scan-status?scanJobId=${encodeURIComponent(scanJobId)}`);
+            const poll = await r.json();
+            if (poll.status === "done") {
+              clearInterval(interval);
+              setResult(poll.result);
+              resolve();
+            } else if (poll.status === "failed") {
+              clearInterval(interval);
+              reject(new Error("Scan failed. Please try again."));
+            }
+          } catch { /* keep polling */ }
+        }, 3500);
+      });
+
     } catch (err) {
       setError(err.message);
     } finally {
