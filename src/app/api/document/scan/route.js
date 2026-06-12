@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from "next/server";
+import { waitUntil } from '@vercel/functions';
 import pool, { initDB } from "@/lib/db";
 
 // ── Pricing ───────────────────────────────────────────────────────────────────
@@ -113,9 +114,10 @@ export async function POST(request) {
     );
     const scanJobId = record.rows[0].scan_job_id;
 
-    // Fire and forget
-    _runPrescanInBackground({ scanJobId, fileBuffer: buffer, fileName: file.name })
-      .catch(console.error);
+    // Keep function alive for background task
+    waitUntil(
+      _runPrescanInBackground({ scanJobId, fileBuffer: buffer, fileName: file.name })
+    );
 
     return NextResponse.json({ scanJobId, status: "processing" });
 
