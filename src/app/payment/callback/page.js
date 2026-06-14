@@ -12,14 +12,14 @@ function CallbackInner() {
 
   useEffect(() => {
     if (status === "successful" || status === "completed") {
-      const user = getUser();
-      if (user) saveUser({ ...user, isPaid: true });
       setState("success");
-      setTimeout(() => router.push("/dashboard"), 3000);
+      // Redirect to dashboard — the credits view will fetch fresh balance from server
+      setTimeout(() => router.push("/dashboard?showCredits=1"), 3000);
     } else if (status === "cancelled" || status === "failed") {
       setState("failed");
     } else {
-      setTimeout(() => router.push("/dashboard"), 2000);
+      // Unknown status — go to dashboard and let the user check
+      setTimeout(() => router.push("/dashboard?showCredits=1"), 2000);
     }
   }, [status]);
 

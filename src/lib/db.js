@@ -1,17 +1,20 @@
 import { Pool } from "pg";
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
-});
+// Reuse the pool across hot reloads in dev / across invocations in serverless
+const globalForPg = globalThis;
+if (!globalForPg._pgPool) {
+  globalForPg._pgPool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+  });
+}
 
+const pool = globalForPg._pgPool;
 export default pool;
 
-let initialized = false;
-
 export async function initDB() {
-  if (initialized) return;
-  initialized = true;
+  if (globalForPg._pgInitialized) return;
+  globalForPg._pgInitialized = true;
   await pool.query(`
     CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -74,6 +77,16 @@ export async function initDB() {
       expires_at TIMESTAMPTZ NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS scan_jobs (
+      id          SERIAL PRIMARY KEY,
+      scan_job_id UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+      status      VARCHAR(50) DEFAULT 'processing',
+      result      JSONB,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scan_jobs_id ON scan_jobs(scan_job_id);
 
     CREATE INDEX IF NOT EXISTS idx_prt_token   ON password_reset_tokens(token);
     CREATE INDEX IF NOT EXISTS idx_prt_user_id ON password_reset_tokens(user_id);

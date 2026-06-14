@@ -231,6 +231,15 @@ function DashboardInner() {
     if (!u) { router.push("/login"); return; }
     setUser(u);
     if (showCredits || (u.credits || 0) < 500) setView("credits");
+
+    // Refresh credits from server in the background
+    fetch("/api/auth/me", { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.user) { saveUser({ ...u, ...data.user }); setUser(prev => ({ ...prev, ...data.user })); }
+      })
+      .catch(() => {});
+
     return () => _clearAll();
   }, []);
 
@@ -314,15 +323,6 @@ function DashboardInner() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Upload failed.");
 
-      if (data.status === "done") {
-        // Synchronous fallback
-        _clearAll();
-        setProcStage(PROCESS_STAGES.length);
-        setUser(prev => { const u = { ...prev, credits: (prev.credits || 0) - (data.credits_used || 0) }; saveUser(u); return u; });
-        setJobId(data.jobId); setReport(data.report); setView("done");
-        return;
-      }
-
       setJobId(data.jobId);
 
       procPollRef.current = setInterval(async () => {
@@ -333,7 +333,12 @@ function DashboardInner() {
             clearInterval(procPollRef.current);
             stageTimers.current.forEach(clearTimeout);
             setProcStage(PROCESS_STAGES.length);
-            setUser(prev => { const u = { ...prev, credits: (prev.credits || 0) - (poll.credits_used || 0) }; saveUser(u); return u; });
+            // Refresh user from auth so credits are accurate (deducted server-side)
+            const meRes = await fetch("/api/auth/me", { credentials: "include" }).catch(() => null);
+            if (meRes?.ok) {
+              const meData = await meRes.json().catch(() => null);
+              if (meData?.user) { saveUser(meData.user); setUser(meData.user); }
+            }
             setReport(poll.report); setView("done");
           } else if (poll.status === "failed") {
             clearInterval(procPollRef.current);
@@ -562,7 +567,9 @@ function DashboardInner() {
                   {scanData.costLine && (
                     <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ fontWeight: 700 }}>Editing cost</span>
-                      <span style={{ fontSize: 20, fontWeight: 900, color: "var(--text)" }}>{scanData.costLine.split("—")[1]?.trim()}</span>
+                      <span style={{ fontSize: 20, fontWeight: 900, color: "var(--text)" }}>
+                        {(scanData.costLine.split("—")[1] ?? scanData.costLine).trim()}
+                      </span>
                     </div>
                   )}
 

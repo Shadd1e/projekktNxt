@@ -9,8 +9,76 @@ const PYTHON_SERVICE_URL  = process.env.PYTHON_SERVICE_URL;
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
 const MAX_FILE_SIZE       = 10 * 1024 * 1024;
 
-async function _processInBackground({ jobId, userId, userEmail, fileBuffer, fileName, creditsNeeded }) {
+async function _processInBackground({ jobId, userId, userEmail, fileBuffer, fileName }) {
   try {
+    // Step 1: Run prescan to determine credits needed
+    const scanForm = new FormData();
+    scanForm.append(
+      "file",
+      new Blob([fileBuffer], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }),
+      fileName
+    );
+
+    let creditsNeeded = 0;
+    const scanRes = await fetch(`${PYTHON_SERVICE_URL}/prescan`, {
+      method:  "POST",
+      headers: { "x-internal-secret": INTERNAL_API_SECRET },
+      body:    scanForm,
+    });
+
+    if (scanRes.ok) {
+      const scanData = await scanRes.json();
+      const charge   = calculateNairaCharge(scanData.flagged_word_count ?? 0);
+      creditsNeeded  = nairaToCredits(charge);
+    }
+
+    // Step 2: Deduct credits (with row lock to prevent race conditions)
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query("BEGIN");
+
+      if (creditsNeeded > 0) {
+        const locked = await dbClient.query(
+          "SELECT credits FROM users WHERE id = $1 FOR UPDATE",
+          [userId]
+        );
+        const current = locked.rows[0]?.credits ?? 0;
+
+        if (current < creditsNeeded) {
+          await dbClient.query("ROLLBACK");
+          await pool.query(
+            "UPDATE jobs SET status = 'failed', fail_reason = 'insufficient_credits' WHERE job_id = $1",
+            [jobId]
+          );
+          return;
+        }
+
+        await dbClient.query(
+          "UPDATE users SET credits = credits - $1 WHERE id = $2",
+          [creditsNeeded, userId]
+        );
+        await dbClient.query(
+          "INSERT INTO credit_log (user_id, delta, reason) VALUES ($1, $2, 'document_fix')",
+          [userId, -creditsNeeded]
+        );
+      }
+
+      // Update job with the credits amount now we know it
+      await dbClient.query(
+        "UPDATE jobs SET credits_used = $1 WHERE job_id = $2",
+        [creditsNeeded, jobId]
+      );
+
+      await dbClient.query("COMMIT");
+    } catch (e) {
+      await dbClient.query("ROLLBACK");
+      await pool.query("UPDATE jobs SET status = 'failed' WHERE job_id = $1", [jobId]).catch(() => {});
+      throw e;
+    } finally {
+      dbClient.release();
+    }
+
+    // Step 3: Send to Python for full processing
     const pythonForm = new FormData();
     pythonForm.append(
       "file",
@@ -31,52 +99,10 @@ async function _processInBackground({ jobId, userId, userEmail, fileBuffer, file
 
     const { job_id: pythonJobId, report } = await pythonRes.json();
 
-    // Deduct credits inside a transaction with a row-level lock.
-    // SELECT FOR UPDATE prevents two simultaneous jobs both passing
-    // the balance check and both deducting.
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-
-      if (creditsNeeded > 0) {
-        const locked = await client.query(
-          "SELECT credits FROM users WHERE id = $1 FOR UPDATE",
-          [userId]
-        );
-        const current = locked.rows[0]?.credits ?? 0;
-
-        if (current < creditsNeeded) {
-          await client.query("ROLLBACK");
-          await pool.query(
-            "UPDATE jobs SET status = 'failed', fail_reason = 'insufficient_credits' WHERE job_id = $1",
-            [jobId]
-          );
-          return;
-        }
-
-        await client.query(
-          "UPDATE users SET credits = credits - $1 WHERE id = $2",
-          [creditsNeeded, userId]
-        );
-        await client.query(
-          "INSERT INTO credit_log (user_id, delta, reason, ref) VALUES ($1, $2, 'document_fix', $3)",
-          [userId, -creditsNeeded, pythonJobId]
-        );
-      }
-
-      await client.query(
-        "UPDATE jobs SET status = 'done', report = $1, job_id = $2 WHERE job_id = $3",
-        [JSON.stringify(report), pythonJobId, jobId]
-      );
-
-      await client.query("COMMIT");
-    } catch (e) {
-      await client.query("ROLLBACK");
-      await pool.query("UPDATE jobs SET status = 'failed' WHERE job_id = $1", [jobId]).catch(() => {});
-      throw e;
-    } finally {
-      client.release();
-    }
+    await pool.query(
+      "UPDATE jobs SET status = 'done', report = $1, job_id = $2 WHERE job_id = $3",
+      [JSON.stringify(report), pythonJobId, jobId]
+    );
 
     sendDocumentReady(userEmail, pythonJobId).catch(console.error);
 
@@ -110,71 +136,36 @@ export async function POST(request) {
     if (!isPKzip)
       return NextResponse.json({ error: "Invalid file. Only genuine .docx files are accepted." }, { status: 400 });
 
-    // Run prescan to find out exactly how many words need rewriting.
-    // Only those words are charged — not the full document.
-    const scanForm = new FormData();
-    scanForm.append(
-      "file",
-      new Blob([fileBuffer], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }),
-      file.name
-    );
-
-    const scanRes = await fetch(`${PYTHON_SERVICE_URL}/prescan`, {
-      method:  "POST",
-      headers: { "x-internal-secret": INTERNAL_API_SECRET },
-      body:    scanForm,
-    });
-
-    let creditsNeeded = 0;
-    if (scanRes.ok) {
-      const scanData = await scanRes.json();
-      const charge   = calculateNairaCharge(scanData.flagged_word_count ?? 0);
-      creditsNeeded  = nairaToCredits(charge);
-    }
-
-    // Pre-deduction balance check
-    if (creditsNeeded > 0) {
-      const userResult = await pool.query(
-        "SELECT id, email, credits FROM users WHERE id = $1",
-        [user.userId]
-      );
-      const dbUser = userResult.rows[0];
-      if (!dbUser) return NextResponse.json({ error: "User not found." }, { status: 404 });
-
-      if (dbUser.credits < creditsNeeded) {
-        const shortfall = creditsNeeded - dbUser.credits;
-        return NextResponse.json({
-          error:        `You need ₦${creditsNeeded.toLocaleString()} to fix this document. Your balance is ₦${dbUser.credits.toLocaleString()}. Please top up ₦${shortfall.toLocaleString()} to continue.`,
-          shortfall,
-          charge_naira: creditsNeeded,
-        }, { status: 403 });
-      }
-    }
-
-    const userRow = await pool.query("SELECT id, email FROM users WHERE id = $1", [user.userId]);
+    const userRow = await pool.query("SELECT id, email, credits FROM users WHERE id = $1", [user.userId]);
     const dbUser  = userRow.rows[0];
     if (!dbUser) return NextResponse.json({ error: "User not found." }, { status: 404 });
 
+    // Quick balance sanity check — exact check happens in background with row lock
+    if ((dbUser.credits || 0) < 250) {
+      return NextResponse.json({
+        error: `You need at least ₦250 credits to process a document. Your balance is ₦${(dbUser.credits || 0).toLocaleString()}. Please top up to continue.`,
+        shortfall: 250 - (dbUser.credits || 0),
+      }, { status: 403 });
+    }
+
     const jobRecord = await pool.query(
-      "INSERT INTO jobs (user_id, job_id, status, credits_used) VALUES ($1, gen_random_uuid(), 'processing', $2) RETURNING job_id",
-      [user.userId, creditsNeeded]
+      "INSERT INTO jobs (user_id, job_id, status, credits_used) VALUES ($1, gen_random_uuid(), 'processing', 0) RETURNING job_id",
+      [user.userId]
     );
     const jobId = jobRecord.rows[0].job_id;
 
+    // Fire and forget — prescan + process happens in background
     _processInBackground({
       jobId,
       userId:    user.userId,
       userEmail: dbUser.email,
       fileBuffer,
       fileName:  file.name,
-      creditsNeeded,
     }).catch(console.error);
 
     return NextResponse.json({
       jobId,
-      status:       "processing",
-      charge_naira: creditsNeeded,
-      is_free:      creditsNeeded === 0,
+      status: "processing",
     });
 
   } catch (err) {

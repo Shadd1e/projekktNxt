@@ -1,7 +1,15 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from "next/server";
-import { waitUntil } from '@vercel/functions';
 import pool, { initDB } from "@/lib/db";
+
+// waitUntil keeps the serverless function alive for background work on Vercel.
+// On other runtimes it's unavailable, so we fall back to a plain fire-and-forget.
+let waitUntil;
+try {
+  ({ waitUntil } = await import('@vercel/functions'));
+} catch {
+  waitUntil = (p) => { p.catch(console.error); };
+}
 
 // ── Pricing ───────────────────────────────────────────────────────────────────
 const NAIRA_PER_WORD = 0.5;
