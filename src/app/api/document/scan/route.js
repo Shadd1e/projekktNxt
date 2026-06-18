@@ -1,15 +1,8 @@
-export const dynamic = 'force-dynamic';
+export const dynamic    = 'force-dynamic';
+export const maxDuration = 30; // just a file upload + one fast Railway call
+
 import { NextResponse } from "next/server";
 import pool, { initDB } from "@/lib/db";
-
-// waitUntil keeps the serverless function alive for background work on Vercel.
-// On other runtimes it's unavailable, so we fall back to a plain fire-and-forget.
-let waitUntil;
-try {
-  ({ waitUntil } = await import('@vercel/functions'));
-} catch {
-  waitUntil = (p) => { p.catch(console.error); };
-}
 
 // ── Pricing ───────────────────────────────────────────────────────────────────
 const NAIRA_PER_WORD = 0.5;
@@ -23,81 +16,6 @@ export function calculateNairaCharge(flaggedWordCount) {
 
 export function nairaToCredits(naira) {
   return naira;
-}
-
-// Runs in background — stores result in scan_jobs table
-async function _runPrescanInBackground({ scanJobId, fileBuffer, fileName }) {
-  const PYTHON_SERVICE_URL  = process.env.PYTHON_SERVICE_URL;
-  const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
-
-  try {
-    const form = new FormData();
-    form.append(
-      "file",
-      new Blob([fileBuffer], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }),
-      fileName
-    );
-
-    const res = await fetch(`${PYTHON_SERVICE_URL}/prescan`, {
-      method:  "POST",
-      headers: { "x-internal-secret": INTERNAL_API_SECRET },
-      body:    form,
-    });
-
-    if (!res.ok) {
-      await pool.query(
-        "UPDATE scan_jobs SET status = 'failed' WHERE scan_job_id = $1",
-        [scanJobId]
-      );
-      return;
-    }
-
-    const scan = await res.json();
-
-    const charge  = calculateNairaCharge(scan.flagged_word_count);
-    const credits = nairaToCredits(charge);
-
-    let verdict    = scan.flagged_sections === 0 ? "clean" : "flagged";
-    let costLine   = null;
-    let issueLines = [];
-
-    if (scan.flagged_sections > 0) {
-      costLine = `${scan.flagged_sections} section${scan.flagged_sections === 1 ? "" : "s"} need${scan.flagged_sections === 1 ? "s" : ""} fixing — ₦${charge.toLocaleString()}`;
-      const { ai_written, web_plagiarism, academic, internal_copy } = scan.issues;
-      if (ai_written > 0)     issueLines.push(`${ai_written} section${ai_written > 1 ? "s" : ""} detected as AI-written`);
-      if (web_plagiarism > 0) issueLines.push(`${web_plagiarism} section${web_plagiarism > 1 ? "s" : ""} matched content found online`);
-      if (academic > 0)       issueLines.push(`${academic} section${academic > 1 ? "s" : ""} matched academic sources`);
-      if (internal_copy > 0)  issueLines.push(`${internal_copy} section${internal_copy > 1 ? "s" : ""} repeated too closely within the document`);
-    }
-
-    const result = {
-      verdict,
-      costLine,
-      issueLines,
-      totalSections:   scan.total_paragraphs,
-      flaggedSections: scan.flagged_sections,
-      _detail: {
-        flaggedWords: scan.flagged_word_count,
-        totalWords:   scan.total_word_count,
-        chargeNaira:  charge,
-        issues:       scan.issues,
-      },
-      _internal: {
-        credits_needed: credits,
-      },
-    };
-
-    await pool.query(
-      "UPDATE scan_jobs SET status = 'done', result = $1 WHERE scan_job_id = $2",
-      [JSON.stringify(result), scanJobId]
-    );
-  } catch (err) {
-    console.error("[scan/background]", err);
-    await pool.query(
-      "UPDATE scan_jobs SET status = 'failed' WHERE scan_job_id = $1",
-      [scanJobId]
-    ).catch(() => {});
-  }
 }
 
 export async function POST(request) {
@@ -116,21 +34,61 @@ export async function POST(request) {
     if (buffer.byteLength > 10 * 1024 * 1024)
       return NextResponse.json({ error: "File exceeds 10MB limit." }, { status: 400 });
 
-    // Create a scan job record
+    // Forward file to Railway — Railway validates, registers the job,
+    // and returns immediately with a job_id. No heavy work runs here.
+    const PYTHON_SERVICE_URL  = process.env.PYTHON_SERVICE_URL;
+    const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
+
+    const form = new FormData();
+    form.append(
+      "file",
+      new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      }),
+      file.name
+    );
+
+    // 20s timeout — Railway should respond in < 2s (just validates + registers job)
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 20_000);
+
+    let railwayRes;
+    try {
+      railwayRes = await fetch(`${PYTHON_SERVICE_URL}/prescan`, {
+        method:  "POST",
+        headers: { "x-internal-secret": INTERNAL_API_SECRET },
+        body:    form,
+        signal:  controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (!railwayRes.ok) {
+      const body = await railwayRes.json().catch(() => ({}));
+      // Surface Railway's validation errors (e.g. too many paragraphs)
+      const msg = body?.detail || "Could not start scan. Please try again.";
+      return NextResponse.json({ error: msg }, { status: railwayRes.status });
+    }
+
+    const { job_id: railwayJobId } = await railwayRes.json();
+
+    // Create a scan job record that stores the Railway job_id for polling
     const record = await pool.query(
-      "INSERT INTO scan_jobs (scan_job_id, status) VALUES (gen_random_uuid(), 'processing') RETURNING scan_job_id"
+      `INSERT INTO scan_jobs (scan_job_id, railway_job_id, status)
+       VALUES (gen_random_uuid(), $1, 'processing')
+       RETURNING scan_job_id`,
+      [railwayJobId]
     );
     const scanJobId = record.rows[0].scan_job_id;
-
-    // Keep function alive for background task
-    waitUntil(
-      _runPrescanInBackground({ scanJobId, fileBuffer: buffer, fileName: file.name })
-    );
 
     return NextResponse.json({ scanJobId, status: "processing" });
 
   } catch (err) {
     console.error("[document/scan]", err);
-    return NextResponse.json({ error: "Could not start scan. Please try again." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Could not start scan. Please try again." },
+      { status: 500 }
+    );
   }
 }

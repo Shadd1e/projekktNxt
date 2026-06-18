@@ -79,14 +79,18 @@ export async function initDB() {
     );
 
     CREATE TABLE IF NOT EXISTS scan_jobs (
-      id          SERIAL PRIMARY KEY,
-      scan_job_id UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
-      status      VARCHAR(50) DEFAULT 'processing',
-      result      JSONB,
-      created_at  TIMESTAMPTZ DEFAULT NOW()
+      id              SERIAL PRIMARY KEY,
+      scan_job_id     UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+      railway_job_id  TEXT,
+      status          VARCHAR(50) DEFAULT 'processing',
+      result          JSONB,
+      created_at      TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE INDEX IF NOT EXISTS idx_scan_jobs_id ON scan_jobs(scan_job_id);
+
+    -- Migrate existing scan_jobs table
+    ALTER TABLE scan_jobs ADD COLUMN IF NOT EXISTS railway_job_id TEXT;
 
     CREATE INDEX IF NOT EXISTS idx_prt_token   ON password_reset_tokens(token);
     CREATE INDEX IF NOT EXISTS idx_prt_user_id ON password_reset_tokens(user_id);
