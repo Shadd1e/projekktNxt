@@ -104,7 +104,122 @@ function StageTracker({ stages, activeIndex, title, subtitle }) {
   );
 }
 
-// ── Sidebar ───────────────────────────────────────────────────────────────────
+// ── Live scanning screen (replaces fake stage ticker) ────────────────────────
+function ScanningScreen({ filename, startTime }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!startTime) return;
+    const iv = setInterval(() => setElapsed(Math.floor((Date.now() - startTime) / 1000)), 1000);
+    return () => clearInterval(iv);
+  }, [startTime]);
+
+  // Progress fills to ~80% over 40s, then crawls to 92% max — never lies by hitting 100
+  const progress = elapsed <= 40
+    ? (elapsed / 40) * 80
+    : 80 + Math.min(12, ((elapsed - 40) / 60) * 12);
+
+  const mins   = Math.floor(elapsed / 60);
+  const secs   = elapsed % 60;
+  const timeStr = `${mins}:${secs.toString().padStart(2, "0")}`;
+
+  const CHECKS = ["AI Detection", "Web Search", "Academic DB", "Similarity"];
+
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", alignItems: "center",
+      justifyContent: "center", minHeight: "72vh", padding: "40px 20px",
+      animation: "fadeUp 0.35s ease",
+    }}>
+
+      {/* Pulsing radar rings */}
+      <div style={{ position: "relative", width: 110, height: 110, marginBottom: 36, flexShrink: 0 }}>
+        <div style={{
+          position: "absolute", inset: -22, borderRadius: "50%",
+          border: "1px solid rgba(200,255,0,0.12)",
+          animation: "scanPing 2.2s ease-out infinite",
+        }} />
+        <div style={{
+          position: "absolute", inset: -11, borderRadius: "50%",
+          border: "1px solid rgba(200,255,0,0.18)",
+          animation: "scanPing 2.2s ease-out infinite 0.55s",
+        }} />
+        <div style={{
+          width: "100%", height: "100%", borderRadius: "50%",
+          background: "rgba(200,255,0,0.05)",
+          border: "1.5px solid rgba(200,255,0,0.3)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 34,
+        }}>
+          📄
+        </div>
+      </div>
+
+      {/* Elapsed time — the honest clock */}
+      <div style={{
+        fontSize: 52, fontWeight: 900,
+        fontFamily: "'DM Mono',monospace",
+        color: "var(--accent)", letterSpacing: "-0.03em",
+        lineHeight: 1, marginBottom: 6,
+      }}>
+        {timeStr}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 20, textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono',monospace" }}>
+        scanning
+      </div>
+
+      {/* Filename pill */}
+      {filename && (
+        <div style={{
+          fontSize: 13, color: "var(--text2)", fontWeight: 600,
+          marginBottom: 28, padding: "6px 14px",
+          background: "var(--surface)", border: "1px solid var(--border)",
+          borderRadius: 8, maxWidth: 320,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
+          {filename}
+        </div>
+      )}
+
+      {/* Progress bar */}
+      <div style={{ width: "100%", maxWidth: 420, marginBottom: 28 }}>
+        <div style={{ height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden" }}>
+          <div style={{
+            height: "100%", width: `${progress}%`,
+            background: "linear-gradient(90deg, rgba(200,255,0,0.6), rgba(200,255,0,1))",
+            borderRadius: 2, transition: "width 1s linear",
+          }} />
+        </div>
+      </div>
+
+      {/* Active check pills */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 32 }}>
+        {CHECKS.map(check => (
+          <div key={check} style={{
+            display: "flex", alignItems: "center", gap: 7,
+            padding: "6px 13px",
+            background: "var(--surface)",
+            border: "1px solid rgba(200,255,0,0.15)",
+            borderRadius: 20, fontSize: 12, color: "var(--text2)",
+          }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: "50%",
+              background: "var(--accent)", display: "inline-block",
+              animation: "scanPulse 1.6s ease-in-out infinite",
+            }} />
+            {check}
+          </div>
+        ))}
+      </div>
+
+      <p style={{ fontSize: 12, color: "var(--muted)", textAlign: "center", maxWidth: 300, lineHeight: 1.6 }}>
+        Keep this tab open — your results appear here automatically.
+      </p>
+    </div>
+  );
+}
+
+
 function Sidebar({ user, view, setView, reset, onLogout }) {
   const nav = [
     { id: "upload",  icon: "📄", label: "Check Document" },
@@ -209,17 +324,18 @@ function DashboardInner() {
   const searchParams = useSearchParams();
   const showCredits  = searchParams.get("showCredits") === "1";
 
-  const [user, setUser]             = useState(null);
-  const [view, setView]             = useState("upload");
-  const [file, setFile]             = useState(null);
-  const [dragOver, setDragOver]     = useState(false);
-  const [scanResult, setScanResult] = useState(null);
-  const [scanStage, setScanStage]   = useState(0);
-  const [procStage, setProcStage]   = useState(0);
-  const [jobId, setJobId]           = useState(null);
-  const [report, setReport]         = useState(null);
-  const [error, setError]           = useState("");
-  const [payLoading, setPayLoading] = useState("");
+  const [user, setUser]               = useState(null);
+  const [view, setView]               = useState("upload");
+  const [file, setFile]               = useState(null);
+  const [dragOver, setDragOver]       = useState(false);
+  const [scanResult, setScanResult]   = useState(null);
+  const [scanStartTime, setScanStartTime] = useState(null);
+  const [scanStage, setScanStage]     = useState(0);
+  const [procStage, setProcStage]     = useState(0);
+  const [jobId, setJobId]             = useState(null);
+  const [report, setReport]           = useState(null);
+  const [error, setError]             = useState("");
+  const [payLoading, setPayLoading]   = useState("");
 
   const fileInputRef = useRef(null);
   const scanPollRef  = useRef(null);
@@ -271,8 +387,7 @@ function DashboardInner() {
 
   async function handleScan() {
     if (!file) return;
-    setError(""); setView("scanning"); setScanStage(0);
-    _animateScanStages();
+    setError(""); setView("scanning"); setScanStartTime(Date.now());
 
     try {
       const fd = new FormData();
@@ -390,7 +505,7 @@ function DashboardInner() {
   function reset() {
     _clearAll();
     setFile(null); setJobId(null); setReport(null); setScanResult(null);
-    setError(""); setScanStage(0); setProcStage(0); setView("upload");
+    setError(""); setScanStage(0); setProcStage(0); setScanStartTime(null); setView("upload");
   }
 
   function handleLogout() { clearToken(); router.push("/"); }
@@ -623,17 +738,7 @@ function DashboardInner() {
 
         {/* ── SCANNING VIEW ── */}
         {view === "scanning" && (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "70vh", animation: "fadeUp 0.35s ease" }}>
-            <StageTracker
-              stages={SCAN_STAGES}
-              activeIndex={Math.min(scanStage, SCAN_STAGES.length - 1)}
-              title="Scanning your document"
-              subtitle="We're running full AI, plagiarism, and similarity checks. This takes 1–3 minutes."
-            />
-            <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 36, textAlign: "center" }}>
-              Keep this tab open — we'll show your results here when done.
-            </p>
-          </div>
+          <ScanningScreen filename={file?.name} startTime={scanStartTime} />
         )}
 
         {/* ── PROCESSING VIEW ── */}
@@ -735,6 +840,14 @@ export default function DashboardPage() {
       </Suspense>
       <style>{`
         @media (max-width: 768px) { .mobile-nav-label { display: none; } }
+        @keyframes scanPing {
+          0%   { transform: scale(1); opacity: 0.7; }
+          100% { transform: scale(1.45); opacity: 0; }
+        }
+        @keyframes scanPulse {
+          0%, 100% { opacity: 1; }
+          50%       { opacity: 0.25; }
+        }
       `}</style>
     </ErrorBoundary>
   );
