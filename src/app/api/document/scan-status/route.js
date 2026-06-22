@@ -49,6 +49,7 @@ export async function GET(request) {
     }
 
     let railwayStatus;
+    let railwayOk = true;
     try {
       const res = await fetch(
         `${PYTHON_SERVICE_URL}/job-status/${row.railway_job_id}`,
@@ -57,10 +58,25 @@ export async function GET(request) {
           signal:  AbortSignal.timeout(8_000),
         }
       );
-      railwayStatus = await res.json();
+      railwayOk    = res.ok;
+      railwayStatus = await res.json().catch(() => ({}));
     } catch {
-      // Railway temporarily unreachable — tell frontend to keep polling
+      // Genuine network blip (DNS, connection refused) — keep polling,
+      // this is the ONLY case where staying on "processing" is correct.
       return NextResponse.json({ status: "processing" });
+    }
+
+    // Railway responded but with an error (404 = job lost from memory store
+    // after a restart/redeploy, 403 = secret mismatch, 500 = internal error).
+    // Previously this fell through every check below and silently defaulted
+    // to "processing" forever — masking a dead job as still-running.
+    if (!railwayOk) {
+      await pool.query(
+        "UPDATE scan_jobs SET status = 'failed' WHERE scan_job_id = $1",
+        [scanJobId]
+      );
+      console.error("[document/scan-status] Railway job-status returned", railwayOk, railwayStatus);
+      return NextResponse.json({ status: "failed" });
     }
 
     if (railwayStatus.status === "processing") {
