@@ -104,9 +104,26 @@ function StageTracker({ stages, activeIndex, title, subtitle }) {
   );
 }
 
+// ── Rotating lines shown during the scan — original, not attributed to anyone ──
+const SCAN_QUOTES = [
+  "A blank page is just a document that hasn't argued with you yet.",
+  "Every paragraph has a fingerprint. We're just reading it closely.",
+  "Originality is easy to claim and a little harder to prove — that's what we're checking.",
+  "Good writing sounds like one person. We're listening for more than one.",
+  "The internet remembers everything. We're asking it what it remembers about this.",
+  "A citation is a paper trail. We're following it.",
+  "Some sentences are too smooth to be an accident. Some are too smooth to be human.",
+  "Plagiarism isn't a typo — it's a pattern. Patterns are what we look for.",
+  "Writing is thinking, slowed down enough to read. We're checking the pace.",
+  "Real voice has small imperfections. We notice when they're missing.",
+  "A document is a series of small decisions. We're reviewing each one.",
+  "The best ideas still need their own words. We're checking whose words these are.",
+];
+
 // ── Live scanning screen (replaces fake stage ticker) ────────────────────────
-function ScanningScreen({ filename, startTime }) {
-  const [elapsed, setElapsed] = useState(0);
+function ScanningScreen({ filename, startTime, estimateMax }) {
+  const [elapsed, setElapsed]     = useState(0);
+  const [quoteIdx, setQuoteIdx]   = useState(() => Math.floor(Math.random() * SCAN_QUOTES.length));
 
   useEffect(() => {
     if (!startTime) return;
@@ -114,13 +131,19 @@ function ScanningScreen({ filename, startTime }) {
     return () => clearInterval(iv);
   }, [startTime]);
 
-  // Progress fills to ~80% over 40s, then crawls to 92% max — never lies by hitting 100
-  const progress = elapsed <= 40
-    ? (elapsed / 40) * 80
-    : 80 + Math.min(12, ((elapsed - 40) / 60) * 12);
+  useEffect(() => {
+    const iv = setInterval(() => setQuoteIdx(i => (i + 1) % SCAN_QUOTES.length), 4500);
+    return () => clearInterval(iv);
+  }, []);
 
-  const mins   = Math.floor(elapsed / 60);
-  const secs   = elapsed % 60;
+  // Honest progress: paced against the real estimate from the pre-check.
+  // Caps at 96% if we run over — never claims 100% until the actual result lands.
+  const target   = estimateMax && estimateMax > 0 ? estimateMax : 30;
+  const progress = Math.min(96, (elapsed / target) * 100);
+  const overTime = elapsed > target;
+
+  const mins    = Math.floor(elapsed / 60);
+  const secs    = elapsed % 60;
   const timeStr = `${mins}:${secs.toString().padStart(2, "0")}`;
 
   const CHECKS = ["AI Detection", "Web Search", "Academic DB", "Similarity"];
@@ -165,7 +188,7 @@ function ScanningScreen({ filename, startTime }) {
         {timeStr}
       </div>
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 20, textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono',monospace" }}>
-        scanning
+        {overTime ? "wrapping up — running a little long" : `scanning · est. ${target}s`}
       </div>
 
       {/* Filename pill */}
@@ -181,7 +204,7 @@ function ScanningScreen({ filename, startTime }) {
         </div>
       )}
 
-      {/* Progress bar */}
+      {/* Progress bar — paced against the real estimate */}
       <div style={{ width: "100%", maxWidth: 420, marginBottom: 28 }}>
         <div style={{ height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden" }}>
           <div style={{
@@ -193,7 +216,7 @@ function ScanningScreen({ filename, startTime }) {
       </div>
 
       {/* Active check pills */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 32 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 36 }}>
         {CHECKS.map(check => (
           <div key={check} style={{
             display: "flex", alignItems: "center", gap: 7,
@@ -212,7 +235,17 @@ function ScanningScreen({ filename, startTime }) {
         ))}
       </div>
 
-      <p style={{ fontSize: 12, color: "var(--muted)", textAlign: "center", maxWidth: 300, lineHeight: 1.6 }}>
+      {/* Rotating quote — keeps people company while they wait */}
+      <div style={{ minHeight: 48, display: "flex", alignItems: "center", maxWidth: 380 }}>
+        <p key={quoteIdx} style={{
+          fontSize: 13, color: "var(--muted)", textAlign: "center", lineHeight: 1.6,
+          fontStyle: "italic", animation: "quoteFade 0.5s ease",
+        }}>
+          “{SCAN_QUOTES[quoteIdx]}”
+        </p>
+      </div>
+
+      <p style={{ fontSize: 11, color: "var(--muted)", textAlign: "center", maxWidth: 300, marginTop: 18, opacity: 0.7 }}>
         Keep this tab open — your results appear here automatically.
       </p>
     </div>
@@ -330,6 +363,8 @@ function DashboardInner() {
   const [dragOver, setDragOver]       = useState(false);
   const [scanResult, setScanResult]   = useState(null);
   const [scanStartTime, setScanStartTime] = useState(null);
+  const [preCheck, setPreCheck]       = useState(null);   // { paragraphCount, wordCount, estimateMin, estimateMax, estimateLabel }
+  const [preCheckLoading, setPreCheckLoading] = useState(false);
   const [scanStage, setScanStage]     = useState(0);
   const [procStage, setProcStage]     = useState(0);
   const [jobId, setJobId]             = useState(null);
@@ -494,18 +529,40 @@ function DashboardInner() {
     } catch (err) { setError(err.message); setPayLoading(""); }
   }
 
-  function handleFileSelect(f) {
-    setError(""); setScanResult(null);
+  async function handleFileSelect(f) {
+    setError(""); setScanResult(null); setPreCheck(null);
     if (!f) return;
     if (!f.name.endsWith(".docx")) { setError("Only .docx files are accepted."); return; }
     if (f.size > 10 * 1024 * 1024) { setError("File exceeds 10MB limit."); return; }
     setFile(f);
+
+    // Instant check — just paragraph/word count, no AI calls, resolves in ~1s.
+    // Lets us tell the user how long the real scan will take before they commit.
+    setPreCheckLoading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      const res  = await fetch("/api/document/analyse", { method: "POST", body: fd, credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Could not check document.");
+        setFile(null);
+      } else {
+        setPreCheck(data);
+      }
+    } catch {
+      setError("Could not check document. Please try again.");
+      setFile(null);
+    } finally {
+      setPreCheckLoading(false);
+    }
   }
 
   function reset() {
     _clearAll();
     setFile(null); setJobId(null); setReport(null); setScanResult(null);
-    setError(""); setScanStage(0); setProcStage(0); setScanStartTime(null); setView("upload");
+    setError(""); setScanStage(0); setProcStage(0); setScanStartTime(null);
+    setPreCheck(null); setView("upload");
   }
 
   function handleLogout() { clearToken(); router.push("/"); }
@@ -623,10 +680,23 @@ function DashboardInner() {
                   <div style={{ width: 44, height: 44, borderRadius: 10, background: "rgba(200,255,0,0.1)", border: "1px solid rgba(200,255,0,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>📄</div>
                   <div style={{ textAlign: "left" }}>
                     <div style={{ fontWeight: 700, fontSize: 15 }}>{file.name}</div>
-                    <div style={{ fontSize: 13, color: "var(--muted)" }}>{(file.size / 1024).toFixed(0)} KB</div>
+                    <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                      {preCheckLoading
+                        ? "Checking document…"
+                        : preCheck
+                          ? `${preCheck.paragraphCount} paragraphs · ${preCheck.wordCount.toLocaleString()} words`
+                          : `${(file.size / 1024).toFixed(0)} KB`}
+                    </div>
                   </div>
-                  <button onClick={e => { e.stopPropagation(); setFile(null); setScanResult(null); }}
-                    style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: 18, padding: 4 }}>✕</button>
+                  {preCheckLoading && (
+                    <span style={{
+                      width: 14, height: 14, borderRadius: "50%",
+                      border: "2px solid var(--border2)", borderTopColor: "var(--accent)",
+                      animation: "spin 0.8s linear infinite", display: "inline-block", flexShrink: 0,
+                    }} />
+                  )}
+                  <button onClick={e => { e.stopPropagation(); setFile(null); setScanResult(null); setPreCheck(null); }}
+                    style={{ marginLeft: preCheckLoading ? 0 : "auto", background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: 18, padding: 4 }}>✕</button>
                 </div>
               ) : (
                 <div>
@@ -644,9 +714,21 @@ function DashboardInner() {
 
             {/* Quote or scan button */}
             {!scanData ? (
-              <button className="btn btn-outline btn-lg" onClick={handleScan} disabled={!file} style={{ width: "100%" }}>
-                Scan document →
-              </button>
+              <>
+                {preCheck && (
+                  <p style={{ fontSize: 13, color: "var(--muted)", textAlign: "center", marginBottom: 10 }}>
+                    Estimated scan time: <strong style={{ color: "var(--text2)" }}>{preCheck.estimateLabel}</strong>
+                  </p>
+                )}
+                <button
+                  className="btn btn-outline btn-lg"
+                  onClick={handleScan}
+                  disabled={!file || preCheckLoading || !preCheck}
+                  style={{ width: "100%" }}
+                >
+                  {preCheckLoading ? "Checking document…" : preCheck ? `Start scan (${preCheck.estimateLabel}) →` : "Scan document →"}
+                </button>
+              </>
             ) : (
               <div style={{ animation: "fadeUp 0.3s ease" }}>
                 <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: 20, marginBottom: 14 }}>
@@ -706,7 +788,7 @@ function DashboardInner() {
                     </p>
                     <div style={{ display: "flex", gap: 10 }}>
                       <button className="btn btn-primary btn-lg" style={{ flex: 1 }} onClick={handleUpload}>Process document — Free</button>
-                      <button className="btn btn-ghost" onClick={() => { setFile(null); setScanResult(null); }}>Change</button>
+                      <button className="btn btn-ghost" onClick={() => { setFile(null); setScanResult(null); setPreCheck(null); }}>Change</button>
                     </div>
                   </div>
                 ) : (user.credits || 0) < (scanData._internal?.credits_needed || 0) ? (
@@ -727,7 +809,7 @@ function DashboardInner() {
                       <button className="btn btn-primary btn-lg" style={{ flex: 1 }} onClick={handleUpload}>
                         Process document — {(scanData._internal?.credits_needed || 0).toLocaleString()} credits
                       </button>
-                      <button className="btn btn-ghost" onClick={() => { setFile(null); setScanResult(null); }}>Change</button>
+                      <button className="btn btn-ghost" onClick={() => { setFile(null); setScanResult(null); setPreCheck(null); }}>Change</button>
                     </div>
                   </div>
                 )}
@@ -738,7 +820,11 @@ function DashboardInner() {
 
         {/* ── SCANNING VIEW ── */}
         {view === "scanning" && (
-          <ScanningScreen filename={file?.name} startTime={scanStartTime} />
+          <ScanningScreen
+            filename={file?.name}
+            startTime={scanStartTime}
+            estimateMax={preCheck?.estimateMax}
+          />
         )}
 
         {/* ── PROCESSING VIEW ── */}
@@ -847,6 +933,10 @@ export default function DashboardPage() {
         @keyframes scanPulse {
           0%, 100% { opacity: 1; }
           50%       { opacity: 0.25; }
+        }
+        @keyframes quoteFade {
+          from { opacity: 0; transform: translateY(4px); }
+          to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </ErrorBoundary>
